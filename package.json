@@ -1,0 +1,16 @@
+{
+  "name": "warpcat-backend",
+  "version": "1.0.0",
+  "description": "WarpCat backend for Farcaster frame and mint preview system.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "WarpCat",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}

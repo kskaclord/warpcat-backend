@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200">
+  <!-- keep this layer mostly transparent; only eyes+beams -->
+  <!-- eye whites -->
+  <ellipse cx="500" cy="620" rx="130" ry="50" fill="#fff"/>
+  <ellipse cx="700" cy="620" rx="130" ry="50" fill="#fff"/>
+  <!-- pupils -->
+  <circle cx="540" cy="620" r="14" fill="#111"/>
+  <circle cx="660" cy="620" r="14" fill="#111"/>
+  <!-- eyelids -->
+  <path d="M380 610 Q500 580 620 610" fill="none" stroke="#222" stroke-width="18" stroke-linecap="round"/>
+  <path d="M580 610 Q700 580 820 610" fill="none" stroke="#222" stroke-width="18" stroke-linecap="round"/>
+  <!-- lasers -->
+  <g opacity=".9">
+    <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ff1a1a"/><stop offset="1" stop-color="#ffd166"/>
+    </linearGradient>
+    <path d="M540 620 L1200 560" stroke="url(#beam)" stroke-width="10" stroke-linecap="round"/>
+    <path d="M660 620 L1200 680" stroke="url(#beam)" stroke-width="10" stroke-linecap="round"/>
+    <circle cx="540" cy="620" r="12" fill="#ff1a1a"/><circle cx="660" cy="620" r="12" fill="#ff1a1a"/>
+  </g>
+</svg>

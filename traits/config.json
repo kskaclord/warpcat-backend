@@ -1,0 +1,23 @@
+{
+  "collectionName": "WarpCat",
+  "totalSupply": 10000,
+  "determinism": {
+    "seedFrom": "fid",
+    "hash": "sha256",
+    "salt": "warpcat_v1"
+  },
+  "svgCanvas": {
+    "width": 1200,
+    "height": 1200
+  },
+  "order": [
+    "background",
+    "aura",
+    "body",
+    "eyes",
+    "mouth",
+    "headgear",
+    "accessory",
+    "expression"
+  ]
+}

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "none",
+    "name": "None",
+    "weight": 60,
+    "svgId": "none"
+  },
+  {
+    "id": "chain",
+    "name": "Chain",
+    "weight": 18,
+    "svgId": "chain"
+  },
+  {
+    "id": "scarf",
+    "name": "Scarf",
+    "weight": 12,
+    "svgId": "scarf"
+  },
+  {
+    "id": "vr_goggles",
+    "name": "VR Goggles",
+    "weight": 8,
+    "svgId": "vr_goggles"
+  },
+  {
+    "id": "monocle",
+    "name": "Monocle",
+    "weight": 2,
+    "svgId": "monocle"
+  }
+]

@@ -1,0 +1,38 @@
+[
+  {
+    "id": "neon_purple",
+    "name": "Neon Purple",
+    "weight": 22,
+    "svgId": "neon_purple"
+  },
+  {
+    "id": "midnight",
+    "name": "Midnight",
+    "weight": 28,
+    "svgId": "midnight"
+  },
+  {
+    "id": "base_blue",
+    "name": "Base Blue",
+    "weight": 18,
+    "svgId": "base_blue"
+  },
+  {
+    "id": "pink_grad",
+    "name": "Pink Gradient",
+    "weight": 12,
+    "svgId": "pink_grad"
+  },
+  {
+    "id": "hologrid",
+    "name": "Hologrid",
+    "weight": 10,
+    "svgId": "hologrid"
+  },
+  {
+    "id": "gold_matrix",
+    "name": "Gold Matrix",
+    "weight": 10,
+    "svgId": "gold_matrix"
+  }
+]

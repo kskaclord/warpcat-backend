@@ -1,0 +1,32 @@
+[
+  {
+    "id": "normal",
+    "name": "Normal",
+    "weight": 40,
+    "svgId": "normal"
+  },
+  {
+    "id": "sharp",
+    "name": "Sharp",
+    "weight": 20,
+    "svgId": "sharp"
+  },
+  {
+    "id": "sleepy",
+    "name": "Sleepy",
+    "weight": 15,
+    "svgId": "sleepy"
+  },
+  {
+    "id": "neon",
+    "name": "Neon",
+    "weight": 15,
+    "svgId": "neon"
+  },
+  {
+    "id": "laser",
+    "name": "Laser",
+    "weight": 10,
+    "svgId": "laser"
+  }
+]

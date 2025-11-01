@@ -1,0 +1,32 @@
+[
+  {
+    "id": "chill",
+    "name": "Chill",
+    "weight": 40,
+    "svgId": "chill"
+  },
+  {
+    "id": "focused",
+    "name": "Focused",
+    "weight": 25,
+    "svgId": "focused"
+  },
+  {
+    "id": "mischief",
+    "name": "Mischievous",
+    "weight": 20,
+    "svgId": "mischief"
+  },
+  {
+    "id": "angry",
+    "name": "Angry",
+    "weight": 10,
+    "svgId": "angry"
+  },
+  {
+    "id": "sad",
+    "name": "Sad",
+    "weight": 5,
+    "svgId": "sad"
+  }
+]

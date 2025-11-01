@@ -1,0 +1,38 @@
+[
+  {
+    "id": "none",
+    "name": "None",
+    "weight": 55,
+    "svgId": "none"
+  },
+  {
+    "id": "beanie",
+    "name": "Beanie",
+    "weight": 12,
+    "svgId": "beanie"
+  },
+  {
+    "id": "cap",
+    "name": "Cap",
+    "weight": 12,
+    "svgId": "cap"
+  },
+  {
+    "id": "headset",
+    "name": "Headset",
+    "weight": 10,
+    "svgId": "headset"
+  },
+  {
+    "id": "crown",
+    "name": "Crown",
+    "weight": 6,
+    "svgId": "crown"
+  },
+  {
+    "id": "halo",
+    "name": "Halo",
+    "weight": 5,
+    "svgId": "halo"
+  }
+]

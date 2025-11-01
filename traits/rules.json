@@ -1,0 +1,58 @@
+{
+  "conflicts": [
+    {
+      "if": {
+        "eyes": [
+          "laser"
+        ]
+      },
+      "deny": {
+        "accessory": [
+          "vr_goggles"
+        ]
+      }
+    },
+    {
+      "if": {
+        "headgear": [
+          "crown",
+          "halo"
+        ]
+      },
+      "deny": {
+        "headgear": [
+          "cap",
+          "beanie",
+          "headset"
+        ]
+      }
+    },
+    {
+      "if": {
+        "headgear": [
+          "headset"
+        ]
+      },
+      "deny": {
+        "accessory": [
+          "vr_goggles",
+          "chain"
+        ]
+      }
+    }
+  ],
+  "requires": [
+    {
+      "if": {
+        "aura": [
+          "flames"
+        ]
+      },
+      "allowBody": [
+        "feline",
+        "robofeline"
+      ]
+    }
+  ],
+  "uniquePerFid": true
+}

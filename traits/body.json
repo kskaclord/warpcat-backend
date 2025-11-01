@@ -1,0 +1,20 @@
+[
+  {
+    "id": "feline",
+    "name": "Feline",
+    "weight": 70,
+    "svgId": "feline"
+  },
+  {
+    "id": "robofeline",
+    "name": "Robo Feline",
+    "weight": 20,
+    "svgId": "robofeline"
+  },
+  {
+    "id": "holocat",
+    "name": "Holo Cat",
+    "weight": 10,
+    "svgId": "holocat"
+  }
+]

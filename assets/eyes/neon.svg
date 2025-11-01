@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200">
+  <defs>
+    <filter id="neon" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <ellipse cx="480" cy="600" rx="90" ry="45" fill="#00f0ff" filter="url(#neon)"/>
+  <ellipse cx="720" cy="600" rx="90" ry="45" fill="#00f0ff" filter="url(#neon)"/>
+  <circle cx="480" cy="600" r="15" fill="#001f3f"/>
+  <circle cx="720" cy="600" r="15" fill="#001f3f"/>
+</svg>

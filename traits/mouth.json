@@ -1,0 +1,32 @@
+[
+  {
+    "id": "smirk",
+    "name": "Smirk",
+    "weight": 35,
+    "svgId": "smirk"
+  },
+  {
+    "id": "grin",
+    "name": "Grin",
+    "weight": 30,
+    "svgId": "grin"
+  },
+  {
+    "id": "tongue",
+    "name": "Tongue Out",
+    "weight": 20,
+    "svgId": "tongue"
+  },
+  {
+    "id": "fangs",
+    "name": "Fangs",
+    "weight": 10,
+    "svgId": "fangs"
+  },
+  {
+    "id": "closed",
+    "name": "Closed",
+    "weight": 5,
+    "svgId": "closed"
+  }
+]

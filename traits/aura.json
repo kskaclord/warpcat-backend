@@ -1,0 +1,32 @@
+[
+  {
+    "id": "none",
+    "name": "None",
+    "weight": 65,
+    "svgId": "none"
+  },
+  {
+    "id": "energy_ring",
+    "name": "Energy Ring",
+    "weight": 15,
+    "svgId": "energy_ring"
+  },
+  {
+    "id": "cyber_halo",
+    "name": "Cyber Halo",
+    "weight": 10,
+    "svgId": "cyber_halo"
+  },
+  {
+    "id": "sparks",
+    "name": "Sparks",
+    "weight": 7,
+    "svgId": "sparks"
+  },
+  {
+    "id": "flames",
+    "name": "Flames",
+    "weight": 3,
+    "svgId": "flames"
+  }
+]

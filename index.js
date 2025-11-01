@@ -14,30 +14,30 @@ app.set('trust proxy', true);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-/* Log */
+/* Simple log */
 app.use((req, _res, next) => {
   const ua = req.headers['user-agent'] || '';
   console.log(`[REQ] ${req.method} ${req.originalUrl} UA="${ua}"`);
   next();
 });
 
-/* Cache: OG/Frame sayfalarında stale istemiyoruz */
+/* Cache policy */
 app.use((req, res, next) => {
-  if (req.path.startsWith('/frame') || req.path.startsWith('/img')) {
+  if (req.path.startsWith('/frame') || req.path.startsWith('/img') || req.path.startsWith('/f')) {
     res.setHeader('Cache-Control', 'no-store, max-age=0');
   }
   next();
 });
 
-/* Static assets (NOTE: senin klasör adı 'statics') */
+/* Serve static/ statics/ as /static */
 const STATIC_A = path.join(__dirname, 'static');
-const STATIC_B = path.join(__dirname, 'statics'); // <- senin klasör
-if (fs.existsSync(STATIC_A)) app.use('/static', express.static(STATIC_A, { setHeaders: setImgHeaders }));
-if (fs.existsSync(STATIC_B)) app.use('/static', express.static(STATIC_B, { setHeaders: setImgHeaders }));
-
-function setImgHeaders(res, filePath) {
+const STATIC_B = path.join(__dirname, 'statics'); // senin klasör
+if (fs.existsSync(STATIC_A)) app.use('/static', express.static(STATIC_A, { setHeaders }));
+if (fs.existsSync(STATIC_B)) app.use('/static', express.static(STATIC_B, { setHeaders }));
+function setHeaders(res, filePath) {
   if (/\.(png|jpg|jpeg|gif|webp)$/i.test(filePath)) {
-    res.setHeader('Content-Type', 'image/png'); // bizim og.png png
+    // og.png png; type'ı garanti edelim
+    res.setHeader('Content-Type', 'image/png');
     res.setHeader('Cache-Control', 'public, max-age=600');
   }
 }
@@ -48,23 +48,44 @@ const PUBLIC_BASE_URL =
   (process.env.PUBLIC_BASE_URL && process.env.PUBLIC_BASE_URL.replace(/\/$/, '')) ||
   `https://localhost:${PORT}`;
 
-// chain/tx
 const CHAIN_ID         = process.env.CHAIN_ID ? `eip155:${process.env.CHAIN_ID}` : 'eip155:8453';
 const CONTRACT_ADDRESS = (process.env.CONTRACT_ADDRESS || '').toLowerCase();
 const MINT_PRICE_WEI   = process.env.MINT_PRICE_WEI || '500000000000000';
 const MINT_SELECTOR    = (process.env.MINT_SELECTOR || '').toLowerCase();
 
-/* -------------------- Minimal store -------------------- */
-const DATA_DIR = path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+const NEYNAR_API_KEY   = process.env.NEYNAR_API_KEY || '';
+const NEYNAR_APP_ID    = process.env.NEYNAR_APP_ID || ''; // opsiyonel
 
 /* -------------------- Helpers -------------------- */
 const toHex = (n) => (typeof n === 'string' && n.startsWith('0x')) ? n : ('0x' + BigInt(n).toString(16));
 const uint256Hex = (n) => ('0x' + BigInt(n).toString(16).padStart(64, '0'));
 const buildMintData = (fid) => {
-  if (!MINT_SELECTOR || !/^0x[0-9a-f]{8}$/i.test(MINT_SELECTOR)) return '0x';
+  if (!/^0x[0-9a-f]{8}$/i.test(MINT_SELECTOR)) return '0x';
   return (MINT_SELECTOR + uint256Hex(fid).slice(2)).toLowerCase();
 };
+
+/* Neynar validate helper (v2 Frames) */
+async function validateWithNeynar(payload) {
+  try {
+    if (!NEYNAR_API_KEY) return { ok: true }; // dev mod
+    const r = await fetch('https://api.neynar.com/v2/frames/validate', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'api_key': NEYNAR_API_KEY,           // Neynar API expects api_key header
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) return { ok: false, status: r.status };
+    const json = await r.json();
+    // Beklenen alan isimleri ileride değişirse fail-soft
+    if (json?.valid === true || json?.is_valid === true) return { ok: true, data: json };
+    return { ok: false, data: json };
+  } catch (e) {
+    console.error('neynar validate error', e);
+    return { ok: false, err: String(e) };
+  }
+}
 
 /* -------------------- SVG -> PNG -------------------- */
 const ASSETS_DIR = path.join(__dirname, 'assets');
@@ -105,29 +126,7 @@ async function svgToPng(svg) {
   return await sharp(Buffer.from(svg)).png().resize(1024, 1024, { fit: 'cover' }).toBuffer();
 }
 
-/* -------------------- Browser Preview -------------------- */
-app.get('/frame/preview', (req, res) => {
-  const fid = String(req.query.fid || '12345');
-  const img = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`;
-  const html = `<!doctype html><html><head>
-    <meta charset="utf-8"/>
-    <title>WarpCat — Browser Preview</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  </head>
-  <body style="font-family:Inter,Arial; padding:24px;">
-    <h2>WarpCat — Browser Preview</h2>
-    <div style="margin:10px 0;">
-      <form action="/frame/preview" method="get">
-        <input name="fid" value="${fid}"/>
-        <button type="submit">Show</button>
-        <a style="margin-left:10px" href="${img}" target="_blank">Open PNG</a>
-      </form>
-    </div>
-    <img src="${img}" width="1024" height="1024" style="max-width:100%; height:auto; display:block;"/>
-  </body></html>`;
-  res.status(200).type('html').send(html);
-});
-
+/* -------------------- Public Images -------------------- */
 app.get('/img/preview/:fid.png', async (req, res) => {
   const fid = String(req.params.fid || '0');
   try {
@@ -143,15 +142,12 @@ app.get('/img/preview/:fid.png', async (req, res) => {
   }
 });
 
-/* -------------------- Sade OG Kart (teşhis rotası) -------------------- */
-/* Bu rotayı cast’la: https://api.warpcat.xyz/frame/card?fid=12345 */
+/* -------------------- Sade OG Card (debug) -------------------- */
 app.get('/frame/card', (req, res) => {
   const fid = String(req.query.fid || '12345');
-  const img = `${PUBLIC_BASE_URL}/static/og.png`; // senin statics/og.png
+  const img = `${PUBLIC_BASE_URL}/static/og.png`;
 
-  const html = `<!doctype html>
-<html>
-  <head>
+  const html = `<!doctype html><html><head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <meta property="og:title" content="WarpCat Preview"/>
@@ -163,22 +159,18 @@ app.get('/frame/card', (req, res) => {
     <meta name="twitter:card" content="summary_large_image"/>
     <meta name="twitter:image" content="${img}"/>
     <title>WarpCat Card</title>
-  </head>
-  <body></body>
-</html>`;
+  </head><body></body></html>`;
   res.status(200)
-     .set({
-       'Content-Type': 'text/html; charset=utf-8',
-       'Cache-Control': 'no-store, max-age=0'
-     })
+     .set({'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store, max-age=0'})
      .send(html);
 });
 
-/* -------------------- Frame (vNext) -------------------- */
+/* -------------------- FRAME META -------------------- */
+// Kısa ve paramsız path: /f/:fid  (cast’ta bunu kullan)
 function frameHead({ fid }) {
   const image   = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`;
   const txUrl   = `${PUBLIC_BASE_URL}/frame/tx?fid=${encodeURIComponent(fid)}`;
-  const postUrl = `${PUBLIC_BASE_URL}/frame/home?fid=${encodeURIComponent(fid)}`;
+  const postUrl = `${PUBLIC_BASE_URL}/f/${encodeURIComponent(fid)}`; // kısa, query yok
   const fallbackOg = `${PUBLIC_BASE_URL}/static/og.png`;
 
   return `
@@ -206,16 +198,20 @@ function frameHead({ fid }) {
   <meta name="fc:frame:button:2:action" content="post"/>
 
   <meta name="fc:frame:post_url" content="${postUrl}"/>
-
-  <link rel="preload" as="image" href="${fallbackOg}"/>
 `.trim();
 }
 
-function sendFrameHome(req, res) {
-  const fid = String(
-    (req.query && (req.query.fid || req.query.id)) ||
-    (req.body && (req.body.fid || req.body.id)) || '12345'
-  );
+/* GET/POST — /f/:fid (kısa rota) */
+async function sendFrame(req, res) {
+  const fid = String(req.params.fid || req.query.fid || req.body?.fid || '12345');
+
+  // POST ise (frame action), Neynar ile doğrula
+  if (req.method === 'POST') {
+    const validation = await validateWithNeynar(req.body || {});
+    if (!validation.ok) {
+      return res.status(401).json({ error: 'neynar_validation_failed' });
+    }
+  }
 
   const html = `<!doctype html><html><head>
     ${frameHead({ fid })}
@@ -223,25 +219,38 @@ function sendFrameHome(req, res) {
   </head><body></body></html>`;
 
   res.status(200)
-     .set({
-       'Content-Type': 'text/html; charset=utf-8',
-       'Cache-Control': 'no-store, max-age=0'
-     })
+     .set({'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store, max-age=0'})
      .send(html);
 }
-app.get('/frame/home', sendFrameHome);
-app.post('/frame/home', sendFrameHome);
-app.post('/frame', sendFrameHome);
+app.get('/f/:fid', sendFrame);
+app.post('/f/:fid', sendFrame);
 
-/* -------------------- Frame TX -------------------- */
-function sendTx(req, res) {
-  const fid =
-    (req.query && (req.query.fid || req.query.id)) ||
-    (req.body && (req.body.fid || req.body.id)) || '0';
+/* Eski path’ler de çalışsın (compat) */
+app.get('/frame/home', (req, res) => {
+  const fid = String(req.query.fid || '12345');
+  res.redirect(302, `/f/${encodeURIComponent(fid)}`);
+});
+app.post('/frame/home', (req, res) => {
+  const fid = String(req.body?.fid || '12345');
+  res.redirect(302, `/f/${encodeURIComponent(fid)}`);
+});
+app.post('/frame', (req, res) => res.redirect(302, '/f/12345'));
 
+/* -------------------- TX endpoint (Neynar doğrulamalı) -------------------- */
+async function sendTx(req, res) {
+  // Neynar doğrulaması (GET olursa geç; POST olursa valide et)
+  if (req.method === 'POST') {
+    const validation = await validateWithNeynar(req.body || {});
+    if (!validation.ok) {
+      return res.status(401).json({ error: 'neynar_validation_failed' });
+    }
+  }
+
+  const fid = String(req.query.fid || req.body?.fid || '0');
   if (!CONTRACT_ADDRESS) {
     return res.status(500).json({ error: 'CONTRACT_ADDRESS missing' });
   }
+
   const tx = {
     chainId: CHAIN_ID,
     method: 'eth_sendTransaction',
@@ -262,7 +271,7 @@ app.post('/frame/tx', sendTx);
 app.get('/frame/debug', (_req, res) => {
   const img = `${PUBLIC_BASE_URL}/static/og.png`;
   const tx  = `${PUBLIC_BASE_URL}/frame/tx?fid=0`;
-  const next= `${PUBLIC_BASE_URL}/frame/debug`;
+  const next= `${PUBLIC_BASE_URL}/f/0`;
 
   const html = `<!doctype html><html><head>
     <meta charset="utf-8"/>
@@ -285,15 +294,16 @@ app.get('/frame/debug', (_req, res) => {
     <meta name="fc:frame:button:2" content="Refresh"/>
     <meta name="fc:frame:button:2:action" content="post"/>
     <meta name="fc:frame:post_url" content="${next}"/>
+
     <title>WarpCat Debug</title>
   </head><body></body></html>`;
   res.status(200)
-     .set({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store, max-age=0' })
+     .set({'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store, max-age=0'})
      .send(html);
 });
 
-/* root & health */
-app.get('/', (_req, res) => res.redirect(302, '/frame'));
+/* Root & health */
+app.get('/', (_req, res) => res.redirect(302, '/f/12345'));
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
 /* Start */

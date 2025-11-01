@@ -1,331 +1,280 @@
-// index.js — WarpCat Frames backend (PNG fix, English-only)
 import 'dotenv/config';
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import crypto from 'crypto';
+import sharp from 'sharp';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 8080;
-const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || ('http://localhost:' + PORT);
-
-// Paths & storage
-const ROOT = process.cwd();
-const TRAITS_DIR = path.join(ROOT, 'traits');
-const ASSETS_DIR = path.join(ROOT, 'assets');
-const DATA_DIR   = path.join(ROOT, 'data');
-const MINTED_FILE = path.join(DATA_DIR, 'minted.json');
-
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-if (!fs.existsSync(MINTED_FILE)) fs.writeFileSync(MINTED_FILE, JSON.stringify({ fids: [] }, null, 2));
-
-// Helpers
-app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 
-const loadMinted = () => {
-  try { return JSON.parse(fs.readFileSync(MINTED_FILE, 'utf8')).fids || []; }
-  catch { return []; }
-};
-const saveMinted = (fids) => fs.writeFileSync(MINTED_FILE, JSON.stringify({ fids }, null, 2));
+/* ================== CONFIG ================== */
+const PORT = Number(process.env.PORT || 8080);
+const PUBLIC_BASE_URL =
+  (process.env.PUBLIC_BASE_URL && process.env.PUBLIC_BASE_URL.replace(/\/$/, '')) ||
+  `http://localhost:${PORT}`;
 
-function mustReadJSON(p) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } }
-function prng(seedText) {
-  const hash = crypto.createHash('sha256').update(seedText).digest('hex');
-  let i = 0;
-  return () => {
-    const chunk = hash.slice(i, i + 8); i = (i + 8) % hash.length;
-    return parseInt(chunk || '0', 16) / 0xffffffff;
-  };
+const DATA_DIR = path.join(__dirname, 'data');
+const ASSETS_DIR = path.join(__dirname, 'assets');
+const TRAITS_DIR = path.join(__dirname, 'traits');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+/* ============ MINT/CHAIN CONFIG ============ */
+const CHAIN_ID = process.env.CHAIN_ID ? `eip155:${process.env.CHAIN_ID}` : 'eip155:8453'; // Base
+const CONTRACT_ADDRESS = (process.env.CONTRACT_ADDRESS || '').toLowerCase();
+const MINT_PRICE_WEI = process.env.MINT_PRICE_WEI || '500000000000000'; // 0.0005 ETH default
+const MINT_SELECTOR = (process.env.MINT_SELECTOR || '').toLowerCase();  // e.g. 0x12345678
+
+/* ============== SIMPLE STORAGE ============== */
+const MINTED_FILE = path.join(DATA_DIR, 'minted.json');
+function readMinted() {
+  try { return JSON.parse(fs.readFileSync(MINTED_FILE, 'utf8')); }
+  catch { return {}; }
 }
-function weightedPick(rng, items) {
-  const total = items.reduce((s, it) => s + (it.weight || 0), 0) || 1;
-  let r = rng() * total;
-  for (const it of items) { r -= (it.weight || 0); if (r <= 0) return it; }
-  return items[items.length - 1];
+function writeMinted(obj) {
+  fs.writeFileSync(MINTED_FILE, JSON.stringify(obj, null, 2));
 }
 
-// Config + tables
-const CONFIG = mustReadJSON(path.join(TRAITS_DIR, 'config.json')) || {
-  collectionName: 'WarpCat',
-  totalSupply: 10000,
-  svgCanvas: { width: 1200, height: 1200 },
-  determinism: { seedFrom: 'fid', hash: 'sha256', salt: 'warpcat_v1' },
-  order: ['background','aura','body','eyes','mouth','headgear','accessory','expression']
-};
-const RULES = mustReadJSON(path.join(TRAITS_DIR, 'rules.json')) || { conflicts: [], requires: [] };
-const TABLES = {
-  background: mustReadJSON(path.join(TRAITS_DIR, 'background.json')) || [],
-  body:       mustReadJSON(path.join(TRAITS_DIR, 'body.json')) || [],
-  eyes:       mustReadJSON(path.join(TRAITS_DIR, 'eyes.json')) || [],
-  mouth:      mustReadJSON(path.join(TRAITS_DIR, 'mouth.json')) || [],
-  headgear:   mustReadJSON(path.join(TRAITS_DIR, 'headgear.json')) || [],
-  accessory:  mustReadJSON(path.join(TRAITS_DIR, 'accessory.json')) || [],
-  aura:       mustReadJSON(path.join(TRAITS_DIR, 'aura.json')) || [],
-  expression: mustReadJSON(path.join(TRAITS_DIR, 'expression.json')) || []
-};
+/* ============== UTIL ENCODERS ============== */
+function toHex(n) {
+  if (typeof n === 'string' && n.startsWith('0x')) return n;
+  return '0x' + BigInt(n).toString(16);
+}
+function uint256Hex(n) {
+  const hex = BigInt(n).toString(16);
+  return '0x' + hex.padStart(64, '0');
+}
+function buildMintData(fid) {
+  if (!MINT_SELECTOR || MINT_SELECTOR.length !== 10 || !MINT_SELECTOR.startsWith('0x')) {
+    // no function selector provided -> no calldata (pure payable)
+    return '0x';
+  }
+  // encode fid as single uint256 argument
+  return (MINT_SELECTOR + uint256Hex(fid).slice(2)).toLowerCase();
+}
 
-function applyRules(sel) {
-  const rules = RULES || {};
-  for (const r of (rules.conflicts || [])) {
-    for (const k of Object.keys(r.if || {})) {
-      const chosen = sel[k]; if (!chosen) continue;
-      if ((r.if[k] || []).includes(chosen.id)) {
-        for (const dk of Object.keys(r.deny || {})) {
-          const denyIds = r.deny[dk] || [];
-          if (sel[dk] && denyIds.includes(sel[dk].id)) sel[dk] = null;
-        }
-      }
+/* ============== TRAIT HELPERS ============== */
+function randFrom(arr, seed) {
+  // simple deterministic pick from seed (fid)
+  const i = Number(BigInt(seed) % BigInt(arr.length));
+  return arr[i];
+}
+function ensureAsset(relPath, fallback) {
+  const p = path.join(ASSETS_DIR, relPath);
+  if (fs.existsSync(p)) return fs.readFileSync(p, 'utf8');
+  if (fallback) {
+    const fb = path.join(ASSETS_DIR, fallback);
+    if (fs.existsSync(fb)) {
+      console.warn(`Missing asset: ${relPath} → fallback ${fallback}`);
+      return fs.readFileSync(fb, 'utf8');
     }
   }
-  for (const rq of (rules.requires || [])) {
-    for (const k of Object.keys(rq.if || {})) {
-      const chosen = sel[k]; if (!chosen) continue;
-      if ((rq.if[k] || []).includes(chosen.id)) {
-        const allowBodies = rq.allowBody || null;
-        if (allowBodies && sel.body && !allowBodies.includes(sel.body.id)) sel.body = null;
-      }
-    }
-  }
-  for (const key of Object.keys(sel)) {
-    if (!sel[key]) {
-      const table = TABLES[key] || [];
-      if (table.length) sel[key] = table[0];
-    }
-  }
-  return sel;
+  console.warn(`Missing asset: ${relPath}`);
+  return ''; // empty
 }
 
-function chooseTraits(fid) {
-  const seed = `${fid}|${CONFIG.determinism?.salt || 'warpcat_v1'}`;
-  const R = prng(seed);
-  const sel = {};
-  for (const key of CONFIG.order) {
-    const table = TABLES[key] || [];
-    sel[key] = table.length ? weightedPick(R, table) : null;
-  }
-  return applyRules(sel);
+/* ============== SVG COMPOSITOR ============== */
+function buildSvg(fid) {
+  // background choices
+  const bgs = ['neon_purple.svg', 'hologrid.svg', 'pink_grad.svg'].filter(f =>
+    fs.existsSync(path.join(ASSETS_DIR, 'background', f))
+  );
+  const bg = bgs.length ? randFrom(bgs, fid) : 'neon_purple.svg';
+
+  const face = ensureAsset('body/cat_base.svg', 'body/cat_base.svg');
+  const eyes = ensureAsset(`eyes/sharp.svg`, `eyes/sharp.svg`);
+  const mouth = ensureAsset(`mouth/smile.svg`, `mouth/smile.svg`);
+  const head = ensureAsset(`headgear/bandana.svg`, ``);
+  const aura = ensureAsset(`aura/none.svg`, ``);
+  const accessory = ensureAsset(`accessory/none.svg`, ``);
+
+  const bgSvg = ensureAsset(`background/${bg}`, `background/neon_purple.svg`);
+
+  // Compose by layering svg fragments inside a fixed viewBox
+  return `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200">
+  <defs>
+    <style>
+      .shadow{ filter: drop-shadow(0 4px 24px rgba(0,0,0,.35)); }
+    </style>
+  </defs>
+  <!-- bg -->
+  <g>${bgSvg}</g>
+  <!-- drawable area -->
+  <g class="shadow">
+    ${face}
+    ${aura}
+    ${eyes}
+    ${mouth}
+    ${head}
+    ${accessory}
+  </g>
+  <text x="48" y="1140" font-size="28" fill="#ffffffaa" font-family="Inter, Arial, sans-serif">WarpCat • FID ${fid}</text>
+</svg>
+`.trim();
 }
 
-// Compose SVG with fallbacks for missing assets
-function composeSVG(fid, selection) {
-  const { width, height } = CONFIG.svgCanvas || { width: 1200, height: 1200 };
-  const FALLBACK = {
-    background: 'neon_purple',
-    aura: 'none',
-    body: 'feline',
-    eyes: 'sharp',
-    mouth: 'smirk',
-    headgear: 'cap',
-    accessory: 'none',
-    expression: 'chill'
-  };
-  const layers = [];
-  for (const type of CONFIG.order) {
-    const choice = selection[type];
-    if (!choice) continue;
-    let svgId = choice.svgId;
-    let filePath = path.join(ASSETS_DIR, type, `${svgId}.svg`);
-    if (!fs.existsSync(filePath)) {
-      const fb = FALLBACK[type];
-      if (fb) {
-        console.warn(`Missing asset: ${type}/${svgId}.svg → fallback ${fb}.svg`);
-        svgId = fb;
-        filePath = path.join(ASSETS_DIR, type, `${svgId}.svg`);
-      }
-    }
-    if (!fs.existsSync(filePath)) {
-      console.warn(`Missing asset (no fallback): ${type}/${choice.svgId}.svg`);
-      continue;
-    }
-    let content = fs.readFileSync(filePath, 'utf8')
-      .replace(/<\?xml[^>]*>\s*/gi, '')
-      .replace(/<!DOCTYPE[^>]*>\s*/gi, '')
-      .replace(/<\/?svg[^>]*>/gi, '');
-    layers.push(`<g id="${type}-${svgId}">${content}</g>`);
-  }
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  ${layers.join('\n')}
-</svg>`;
+async function svgToPng(svg) {
+  // 1024x1024 PNG for Frames
+  return await sharp(Buffer.from(svg)).png().resize(1024, 1024, { fit: 'cover' }).toBuffer();
 }
 
-// Rate limit
-const hits = new Map();
-function rateLimit(req, res, next) {
-  const ip = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.socket.remoteAddress || 'ip';
-  const now = Date.now();
-  const arr = (hits.get(ip) || []).filter(t => now - t < 15000);
-  if (arr.length > 5) return res.status(429).send('Too Many Requests');
-  arr.push(now); hits.set(ip, arr); next();
-}
-
-// Routes
-app.get('/health', (_req, res) => res.json({ ok: true, base: PUBLIC_BASE_URL }));
-
-// Browser preview page
-app.get('/frame/preview', (req, res) => {
-  const fid = Number(req.query.fid || 12345);
-  const img = `${PUBLIC_BASE_URL}/img/preview/${fid}.png`; // PNG now
-  res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><title>WarpCat Preview</title>
-  <style>body{font-family:Inter,Arial;margin:32px}input{padding:8px}button{padding:8px 12px;margin-left:8px}</style></head>
-  <body>
-    <h2>WarpCat — Browser Preview</h2>
-    <form action="/frame/preview" method="get">
-      <label>FID: <input name="fid" value="${fid}" /></label>
-      <button type="submit">Show</button>
-      <a href="/img/preview/${fid}.png" target="_blank">Open PNG</a>
-    </form>
-    <div style="margin-top:20px"><img src="${img}" style="max-width:100%;height:auto;border:1px solid #eee"/></div>
-  </body></html>`);
-});
-
-// Basic landing for Frames (for Warpcast composer)
+/* ============== BROWSER PREVIEW PAGE ============== */
 app.get('/frame', (_req, res) => {
   const html = `<!doctype html><html><head>
     <meta charset="utf-8"/>
     <meta property="og:title" content="WarpCat Frame"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <title>WarpCat</title>
+    <title>WarpCat Frame</title>
   </head>
-  <body style="font-family:Inter,Arial; text-align:center; padding:40px;">
+  <body style="font-family:Inter,Arial; text-align:center; padding:36px;">
     <h1>WarpCat Frame</h1>
-    <p>Open this in your Farcaster client or use <a href="/frame/preview?fid=12345" target="_blank">browser preview</a>.</p>
-    <form action="/frame/preview" method="post" style="margin-top:24px;">
-      <label>FID: <input name="untrustedData[fid]" value="12345"/></label>
-      <button type="submit">Preview</button>
+    <p>Open this in your Farcaster client or use <a href="/frame/preview?fid=12345">browser preview</a>.</p>
+
+    <!-- IMPORTANT: GET so the browser shows image page -->
+    <form action="/frame/preview" method="get" style="margin-top:16px;">
+      <label>FID:
+        <input name="fid" value="12345" style="padding:4px 8px;"/>
+      </label>
+      <button type="submit" style="margin-left:8px;">Preview</button>
     </form>
   </body></html>`;
   res.type('html').send(html);
 });
 
-// Frames: preview (now uses PNG in og:image)
-app.post('/frame/preview', rateLimit, (req, res) => {
-  const fid = Number(req.body?.['untrustedData[fid]'] ?? req.body?.fid ?? 0);
-  const minted = loadMinted();
-  const already = minted.includes(fid);
-  const button = already ? 'Already Minted' : 'Mint';
-  const img = `${PUBLIC_BASE_URL}/img/preview/${fid}.png`; // PNG here
-  const postUrl = already ? `${PUBLIC_BASE_URL}/frame/already` : `${PUBLIC_BASE_URL}/frame/mint`;
+/* ============== BROWSER PREVIEW (HTML WRAPPER) ============== */
+app.get('/frame/preview', (req, res) => {
+  const fid = String(req.query.fid || '12345');
+  const img = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`;
+  const openPng = img;
   const html = `<!doctype html><html><head>
-    <meta property="og:title" content="WarpCat Preview"/>
-    <meta property="og:image" content="${img}"/>
-    <meta property="fc:frame" content="vNext"/>
-    <meta property="fc:frame:button:1" content="${button}"/>
-    <meta property="fc:frame:post_url" content="${postUrl}"/>
-  </head><body></body></html>`;
+    <meta charset="utf-8"/>
+    <title>WarpCat — Browser Preview</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  </head>
+  <body style="font-family:Inter,Arial; padding:24px;">
+    <h2>WarpCat — Browser Preview</h2>
+    <div style="margin: 10px 0;">
+      <form action="/frame/preview" method="get">
+        <input name="fid" value="${fid}" />
+        <button type="submit">Show</button>
+        <a style="margin-left:10px" href="${openPng}" target="_blank">Open PNG</a>
+      </form>
+    </div>
+    <img src="${img}" width="1024" height="1024" style="max-width:100%; height:auto; display:block;"/>
+  </body></html>`;
   res.type('html').send(html);
 });
 
-// Frames: mint
-app.post('/frame/mint', rateLimit, (req, res) => {
-  const fid = Number(req.body?.['untrustedData[fid]'] ?? req.body?.fid ?? 0);
-  const minted = loadMinted();
-  if (!minted.includes(fid)) { minted.push(fid); saveMinted(minted); }
-  const html = `<!doctype html><html><head>
-    <meta property="og:title" content="WarpCat Minted"/>
-    <meta property="og:image" content="${PUBLIC_BASE_URL}/static/thanks.svg"/>
-    <meta property="fc:frame" content="vNext"/>
-    <meta property="fc:frame:button:1" content="View"/>
-    <meta property="fc:frame:post_url" content="${PUBLIC_BASE_URL}/frame/view"/>
-  </head><body></body></html>`;
-  res.type('html').send(html);
-});
-
-// Frames: already minted
-app.post('/frame/already', (_req, res) => {
-  const html = `<!doctype html><html><head>
-    <meta property="og:title" content="Already Minted"/>
-    <meta property="og:image" content="${PUBLIC_BASE_URL}/static/already.svg"/>
-    <meta property="fc:frame" content="vNext"/>
-    <meta property="fc:frame:button:1" content="Back"/>
-    <meta property="fc:frame:post_url" content="${PUBLIC_BASE_URL}/frame"/>
-  </head><body></body></html>`;
-  res.type('html').send(html);
-});
-
-// Frames: view screen
-app.post('/frame/view', (req, res) => {
-  const fid = Number(req.body?.['untrustedData[fid]'] ?? req.body?.fid ?? 0);
-  const img = `${PUBLIC_BASE_URL}/img/preview/${fid}.png`; // show PNG
-  const html = `<!doctype html><html><head>
-    <meta property="og:title" content="Your WarpCat"/>
-    <meta property="og:image" content="${img}"/>
-    <meta property="fc:frame" content="vNext"/>
-    <meta property="fc:frame:button:1" content="Back"/>
-    <meta property="fc:frame:post_url" content="${PUBLIC_BASE_URL}/frame"/>
-  </head><body></body></html>`;
-  res.type('html').send(html);
-});
-
-// SVG endpoint (still available)
-app.get('/img/preview/:fid.svg', (req, res) => {
-  const fid = Number(req.params.fid || 0);
-  const svg = composeSVG(fid, chooseTraits(fid));
-  res.set('Content-Type', 'image/svg+xml');
-  res.set('Cache-Control', 'public, max-age=60');
-  res.send(svg);
-});
-
-// NEW: PNG endpoint (SVG → PNG via sharp)
+/* ============== RAW IMAGE ENDPOINTS ============== */
 app.get('/img/preview/:fid.png', async (req, res) => {
-  const fid = Number(req.params.fid || 0);
-  const svg = composeSVG(fid, chooseTraits(fid));
+  const fid = String(req.params.fid || '0');
   try {
-    const sharp = (await import('sharp')).default;
-    const buf = await sharp(Buffer.from(svg)).png().toBuffer();
-    res.set('Content-Type', 'image/png');
-    res.set('Cache-Control', 'public, max-age=60');
-    res.send(buf);
+    const svg = buildSvg(fid);
+    const png = await svgToPng(svg);
+    res.set('content-type', 'image/png').send(png);
   } catch (e) {
-    console.error('PNG render failed (sharp missing?):', e?.message || e);
-    // Fallback: return SVG if sharp not available
-    res.set('Content-Type', 'image/svg+xml');
-    res.send(svg);
+    console.error('png error', e);
+    res.status(500).send('img error');
   }
 });
 
-// Metadata (future on-chain use)
-app.get('/metadata/:fid', (req, res) => {
-  const fid = Number(req.params.fid || 0);
-  const traits = chooseTraits(fid);
-  const image = `${PUBLIC_BASE_URL}/img/preview/${fid}.png`;
-  const attrs = Object.entries(traits).map(([k, v]) => ({ trait_type: k, value: v?.id || 'none' }));
-  res.json({
-    name: `WarpCat #${fid}`,
-    description: 'WarpCat — generated from your Farcaster identity.',
-    image,
-    external_url: `${PUBLIC_BASE_URL}/frame`,
-    attributes: attrs
-  });
+app.get('/img/preview/:fid.svg', (req, res) => {
+  const fid = String(req.params.fid || '0');
+  const svg = buildSvg(fid);
+  res.set('content-type', 'image/svg+xml').send(svg);
 });
 
-// Static placeholders & dev
-app.get('/static/:which.svg', (req, res) => {
-  const which = req.params.which;
-  const label = which === 'thanks' ? 'Minted' : which === 'already' ? 'Already Minted' : 'WarpCat';
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='630'>
-    <rect width='100%' height='100%' fill='#111827'/>
-    <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='48' fill='#fff'>${label}</text>
-  </svg>`;
-  res.set('Content-Type', 'image/svg+xml').send(svg);
-});
+/* ============== FRAMES META (HOME) ============== */
+app.get('/frame/home', (req, res) => {
+  // This route returns OG meta for Frames (default entry). It points image to PNG
+  const fid = String(req.query.fid || '12345');
+  const img = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`;
+  const txUrl = `${PUBLIC_BASE_URL}/frame/tx?fid=${encodeURIComponent(fid)}`;
+  const nextUrl = `${PUBLIC_BASE_URL}/frame/home?fid=${encodeURIComponent(fid)}`;
 
-app.get('/dev', (_req, res) => {
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>WarpCat Dev</title></head>
-  <body style="font-family: Arial; padding:20px;">
-    <h2>WarpCat — Compositor Test</h2>
-    <p><a href="/img/preview/12345.png" target="_blank">/img/preview/12345.png</a></p>
-    <form action="/frame/preview" method="post">
-      <label>FID: <input name="untrustedData[fid]" value="12345"/></label>
-      <button type="submit">Preview</button>
-    </form>
-    <p style="margin-top:10px;"><a href="/frame/preview?fid=12345" target="_blank">Browser Preview</a></p>
-  </body></html>`;
+  const html = `<!doctype html><html><head>
+    <meta property="og:title" content="WarpCat Preview"/>
+    <meta property="og:image" content="${img}"/>
+    <meta name="fc:frame" content="vNext"/>
+    <meta name="fc:frame:image" content="${img}"/>
+    <meta name="fc:frame:button:1" content="Mint"/>
+    <meta name="fc:frame:button:1:action" content="tx"/>
+    <meta name="fc:frame:button:1:target" content="${txUrl}"/>
+    <meta name="fc:frame:button:2" content="Refresh"/>
+    <meta name="fc:frame:button:2:action" content="post"/>
+    <meta name="fc:frame:post_url" content="${nextUrl}"/>
+  </head><body></body></html>`;
   res.type('html').send(html);
 });
 
-// Start
+// default /frame entry for Frames clients
+app.post('/frame', (req, res) => {
+  // redirect Frames to /frame/home with a random-ish fid if yoksa
+  const fid = '12345';
+  res.redirect(302, `/frame/home?fid=${fid}`);
+});
+
+/* ============== FRAMES TX ENDPOINT ============== */
+app.post('/frame/tx', (req, res) => {
+  // Support both GET (manual test) and POST (Frames)
+  const fid =
+    (req.query && (req.query.fid || req.query.id)) ||
+    (req.body && (req.body.fid || req.body.id)) ||
+    '0';
+
+  if (!CONTRACT_ADDRESS) {
+    return res.status(500).json({ error: 'CONTRACT_ADDRESS missing' });
+  }
+
+  const data = buildMintData(fid);
+  const tx = {
+    chainId: CHAIN_ID,
+    method: 'eth_sendTransaction',
+    params: {
+      to: CONTRACT_ADDRESS,
+      data,
+      value: toHex(MINT_PRICE_WEI),
+    },
+  };
+  res.json(tx);
+});
+
+// also allow GET for manual testing in browser
+app.get('/frame/tx', (req, res) => {
+  const fid = String(req.query.fid || '0');
+  const data = buildMintData(fid);
+  const tx = {
+    chainId: CHAIN_ID,
+    method: 'eth_sendTransaction',
+    params: {
+      to: CONTRACT_ADDRESS,
+      data,
+      value: toHex(MINT_PRICE_WEI),
+    },
+  };
+  res.json(tx);
+});
+
+/* ============== MINTED GUARD (OPTIONAL) ============== */
+app.post('/frame/minted', (req, res) => {
+  const fid = String((req.body && (req.body.fid || req.body.userFid)) || '0');
+  const db = readMinted();
+  db[fid] = { t: Date.now() };
+  writeMinted(db);
+  res.json({ ok: true });
+});
+
+/* ============== ROOT ============== */
+app.get('/', (_req, res) => {
+  res.redirect(302, '/frame');
+});
+
+/* ============== START ============== */
 app.listen(PORT, () => {
   console.log(`WarpCat backend listening at ${PUBLIC_BASE_URL}/frame`);
 });

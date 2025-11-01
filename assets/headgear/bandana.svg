@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200">
+  <!-- üst bant -->
+  <path d="M340 560 Q600 460 860 560" fill="#1c2442" stroke="#0d142b" stroke-width="20" />
+  <!-- düğüm ve kuyruk -->
+  <path d="M860 560 q120 40 140 60 q-100 20 -200 0 q10 -40 60 -60z" fill="#1c2442" stroke="#0d142b" stroke-width="16"/>
+</svg>

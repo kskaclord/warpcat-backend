@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200">
+  <!-- kulaklar -->
+  <g fill="#1f1f21" stroke="#0d0d0f" stroke-width="18">
+    <polygon points="360,190 300,350 480,366" />
+    <polygon points="840,190 900,350 720,366" />
+  </g>
+
+  <!-- kafa -->
+  <ellipse cx="600" cy="720" rx="420" ry="330" fill="#2d2d30" stroke="#0d0d0f" stroke-width="22"/>
+  <!-- hafif parlama -->
+  <ellipse cx="600" cy="500" rx="360" ry="120" fill="rgba(255,255,255,.04)"/>
+</svg>

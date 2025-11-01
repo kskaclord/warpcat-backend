@@ -1,4 +1,4 @@
-// index.js — WarpCat compositor and frame server (English-only)
+// index.js — WarpCat Frames backend (v2, English-only)
 import 'dotenv/config';
 import express from 'express';
 import fs from 'fs';
@@ -9,41 +9,32 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || ('http://localhost:' + PORT);
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Paths
+// ───────────────────────────────────────────────────────────────────────────────
+// Paths & storage
 const ROOT = process.cwd();
 const TRAITS_DIR = path.join(ROOT, 'traits');
 const ASSETS_DIR = path.join(ROOT, 'assets');
-const DATA_DIR = path.join(ROOT, 'data');
+const DATA_DIR   = path.join(ROOT, 'data');
 const MINTED_FILE = path.join(DATA_DIR, 'minted.json');
 
-// Ensure data directory and minted file exist
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(MINTED_FILE)) fs.writeFileSync(MINTED_FILE, JSON.stringify({ fids: [] }, null, 2));
 
-// Helpers for minted storage
 const loadMinted = () => {
-  try {
-    return JSON.parse(fs.readFileSync(MINTED_FILE, 'utf8')).fids || [];
-  } catch {
-    return [];
-  }
+  try { return JSON.parse(fs.readFileSync(MINTED_FILE, 'utf8')).fids || []; }
+  catch { return []; }
 };
 const saveMinted = (fids) => fs.writeFileSync(MINTED_FILE, JSON.stringify({ fids }, null, 2));
 
-// Safe JSON loader
+// ───────────────────────────────────────────────────────────────────────────────
+// Utils
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 function mustReadJSON(p) {
   try { return JSON.parse(fs.readFileSync(p, 'utf8')); }
-  catch (e) {
-    console.warn('Failed to read JSON:', p);
-    return null;
-  }
+  catch { return null; }
 }
-
-// Deterministic PRNG based on seed text (sha256)
 function prng(seedText) {
   const hash = crypto.createHash('sha256').update(seedText).digest('hex');
   let i = 0;
@@ -53,67 +44,23 @@ function prng(seedText) {
     return parseInt(chunk || '0', 16) / 0xffffffff;
   };
 }
-
-// Weighted pick helper
 function weightedPick(rng, items) {
-  const total = items.reduce((s, it) => s + (it.weight || 0), 0);
-  let r = rng() * (total || 1);
-  for (const it of items) {
-    r -= (it.weight || 0);
-    if (r <= 0) return it;
-  }
+  const total = items.reduce((s, it) => s + (it.weight || 0), 0) || 1;
+  let r = rng() * total;
+  for (const it of items) { r -= (it.weight || 0); if (r <= 0) return it; }
   return items[items.length - 1];
 }
 
-// Apply simple rules defined in rules.json
-function applyRules(selection, rules) {
-  if (!rules) return selection;
-
-  // Conflicts: if a trait triggers denial of others, unset denied choices
-  for (const rule of (rules.conflicts || [])) {
-    const ifKeys = Object.keys(rule.if || {});
-    for (const traitKey of ifKeys) {
-      const chosen = selection[traitKey];
-      if (!chosen) continue;
-      if ((rule.if[traitKey] || []).includes(chosen.id)) {
-        for (const denyKey of Object.keys(rule.deny || {})) {
-          const denyIds = rule.deny[denyKey] || [];
-          if (selection[denyKey] && denyIds.includes(selection[denyKey].id)) {
-            selection[denyKey] = null;
-          }
-        }
-      }
-    }
-  }
-
-  // Requires: if a trait requires a limited body set, enforce it
-  for (const req of (rules.requires || [])) {
-    const reqKeys = Object.keys(req.if || {});
-    for (const reqKey of reqKeys) {
-      const chosen = selection[reqKey];
-      if (!chosen) continue;
-      if ((req.if[reqKey] || []).includes(chosen.id)) {
-        const allowBodies = req.allowBody || null;
-        if (allowBodies && selection.body && !allowBodies.includes(selection.body.id)) {
-          selection.body = null;
-        }
-      }
-    }
-  }
-
-  return selection;
-}
-
-// Load config, rules, and trait tables
+// ───────────────────────────────────────────────────────────────────────────────
+// Config + rules + tables
 const CONFIG = mustReadJSON(path.join(TRAITS_DIR, 'config.json')) || {
   collectionName: 'WarpCat',
   totalSupply: 10000,
-  determinism: { seedFrom: 'fid', hash: 'sha256', salt: 'warpcat_v1' },
   svgCanvas: { width: 1200, height: 1200 },
+  determinism: { seedFrom: 'fid', hash: 'sha256', salt: 'warpcat_v1' },
   order: ['background','aura','body','eyes','mouth','headgear','accessory','expression']
 };
 const RULES = mustReadJSON(path.join(TRAITS_DIR, 'rules.json')) || { conflicts: [], requires: [] };
-
 const TABLES = {
   background: mustReadJSON(path.join(TRAITS_DIR, 'background.json')) || [],
   body:       mustReadJSON(path.join(TRAITS_DIR, 'body.json')) || [],
@@ -125,182 +72,212 @@ const TABLES = {
   expression: mustReadJSON(path.join(TRAITS_DIR, 'expression.json')) || []
 };
 
-// Choose traits deterministically from fid (or numeric id)
+function applyRules(sel) {
+  const rules = RULES || {};
+  for (const r of (rules.conflicts || [])) {
+    for (const k of Object.keys(r.if || {})) {
+      const chosen = sel[k];
+      if (!chosen) continue;
+      if ((r.if[k] || []).includes(chosen.id)) {
+        for (const dk of Object.keys(r.deny || {})) {
+          const denyIds = r.deny[dk] || [];
+          if (sel[dk] && denyIds.includes(sel[dk].id)) sel[dk] = null;
+        }
+      }
+    }
+  }
+  for (const rq of (rules.requires || [])) {
+    for (const k of Object.keys(rq.if || {})) {
+      const chosen = sel[k];
+      if (!chosen) continue;
+      if ((rq.if[k] || []).includes(chosen.id)) {
+        const allowBodies = rq.allowBody || null;
+        if (allowBodies && sel.body && !allowBodies.includes(sel.body.id)) sel.body = null;
+      }
+    }
+  }
+  for (const key of Object.keys(sel)) {
+    if (!sel[key]) {
+      const table = TABLES[key] || [];
+      if (table.length) sel[key] = table[0];
+    }
+  }
+  return sel;
+}
+
 function chooseTraits(fid) {
   const seed = `${fid}|${CONFIG.determinism?.salt || 'warpcat_v1'}`;
   const R = prng(seed);
-
-  const selection = {};
+  const sel = {};
   for (const key of CONFIG.order) {
     const table = TABLES[key] || [];
-    if (!table.length) { selection[key] = null; continue; }
-    selection[key] = weightedPick(R, table);
+    sel[key] = table.length ? weightedPick(R, table) : null;
   }
-
-  applyRules(selection, RULES);
-
-  // Simple fallback: if something became null due to rules, pick first available
-  for (const key of Object.keys(selection)) {
-    if (!selection[key]) {
-      const table = TABLES[key] || [];
-      if (table.length) selection[key] = table[0];
-    }
-  }
-
-  return selection;
+  return applyRules(sel);
 }
 
-// Compose SVG string by concatenating selected SVG layer contents
 function composeSVG(fid, selection) {
   const { width, height } = CONFIG.svgCanvas || { width: 1200, height: 1200 };
   const layers = [];
-
   for (const type of CONFIG.order) {
     const choice = selection[type];
     if (!choice || !choice.svgId) continue;
     const filePath = path.join(ASSETS_DIR, type, `${choice.svgId}.svg`);
-    if (!fs.existsSync(filePath)) {
-      console.warn(`Missing asset: ${type}/${choice.svgId}.svg`);
-      continue;
-    }
-    let content = fs.readFileSync(filePath, 'utf8');
-    // Remove outer svg wrapper to embed safely
-    content = content
+    if (!fs.existsSync(filePath)) { console.warn(`Missing asset: ${type}/${choice.svgId}.svg`); continue; }
+    let content = fs.readFileSync(filePath, 'utf8')
       .replace(/<\?xml[^>]*>\s*/gi, '')
       .replace(/<!DOCTYPE[^>]*>\s*/gi, '')
       .replace(/<\/?svg[^>]*>/gi, '');
     layers.push(`<g id="${type}-${choice.id}">${content}</g>`);
   }
-
-  const title = `${CONFIG.collectionName} • FID ${fid}`;
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-  <desc>${title}</desc>
   ${layers.join('\n')}
 </svg>`;
 }
 
-// Routes
+// ───────────────────────────────────────────────────────────────────────────────
+// Simple in-memory rate limit (best effort)
+const hits = new Map();
+function rateLimit(req, res, next) {
+  const ip = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.socket.remoteAddress || 'ip';
+  const now = Date.now();
+  const arr = (hits.get(ip) || []).filter(t => now - t < 15_000); // 15s window
+  if (arr.length > 5) return res.status(429).send('Too Many Requests');
+  arr.push(now); hits.set(ip, arr); next();
+}
 
-// Health check
+// ───────────────────────────────────────────────────────────────────────────────
+// Routes
 app.get('/health', (_req, res) => res.json({ ok: true, base: PUBLIC_BASE_URL }));
 
-// Basic frame landing
+// Landing (for browser; Frames will mostly hit preview/mint endpoints)
 app.get('/frame', (_req, res) => {
-  const html = `
-  <!doctype html>
-  <html>
-  <head>
-    <meta charset="utf-8">
-    <meta property="og:title" content="WarpCat Mint"/>
-    <meta property="fc:frame" content="vNext"/>
+  const html = `<!doctype html><html><head>
+    <meta charset="utf-8"/>
+    <meta property="og:title" content="WarpCat Frame"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <title>WarpCat</title>
   </head>
-  <body style="font-family: Arial, sans-serif; text-align:center; padding:40px;">
-    <h1>WarpCat</h1>
-    <p>Preview and mint your WarpCat.</p>
-    <form action="/frame/preview" method="post">
-      <label>FID: <input name="untrustedData[fid]" value="1" /></label>
+  <body style="font-family:Inter,Arial; text-align:center; padding:40px;">
+    <h1>WarpCat Frame</h1>
+    <p>Click Preview in your Farcaster client, or test below.</p>
+    <form action="/frame/preview" method="post" style="margin-top:24px;">
+      <label>FID: <input name="untrustedData[fid]" value="12345"/></label>
       <button type="submit">Preview</button>
     </form>
-  </body>
-  </html>
-  `;
+  </body></html>`;
   res.type('html').send(html);
 });
 
-// Frame preview - prepares social/meta tags for frame
-app.post('/frame/preview', (req, res) => {
-  const fid = (req.body && (req.body['untrustedData[fid]'] || req.body.fid)) || (req.body?.untrustedData?.fid) || 0;
+// Frame: preview
+app.post('/frame/preview', rateLimit, (req, res) => {
+  const fid = Number(req.body?.['untrustedData[fid]'] ?? req.body?.fid ?? 0);
   const minted = loadMinted();
-  const already = minted.includes(Number(fid));
-  const buttonText = already ? 'Already Minted' : 'Mint';
+  const already = minted.includes(fid);
+  const button = already ? 'Already Minted' : 'Mint';
+  const img = `${PUBLIC_BASE_URL}/img/preview/${fid}.svg`;
+  const postUrl = already ? `${PUBLIC_BASE_URL}/frame/already` : `${PUBLIC_BASE_URL}/frame/mint`;
 
-  const html = `
-  <!doctype html>
-  <html>
-  <head>
+  const html = `<!doctype html><html><head>
     <meta property="og:title" content="WarpCat Preview"/>
-    <meta property="og:image" content="${PUBLIC_BASE_URL}/img/preview/${fid}.svg"/>
+    <meta property="og:image" content="${img}"/>
     <meta property="fc:frame" content="vNext"/>
-    <meta property="fc:frame:button:1" content="${buttonText}"/>
-    <meta property="fc:frame:post_url" content="${PUBLIC_BASE_URL}/frame/mint"/>
-  </head>
-  <body>
-    <h1>Preview for FID ${fid}</h1>
-    <img src="/img/preview/${fid}.svg" alt="WarpCat ${fid}" style="max-width:420px"/>
-  </body>
-  </html>
-  `;
+    <meta property="fc:frame:button:1" content="${button}"/>
+    <meta property="fc:frame:post_url" content="${postUrl}"/>
+  </head><body></body></html>`;
   res.type('html').send(html);
 });
 
-// Frame mint endpoint (simple local stub)
-app.post('/frame/mint', (req, res) => {
-  const fid = (req.body && (req.body['untrustedData[fid]'] || req.body.fid)) || (req.body?.untrustedData?.fid) || 0;
+// Frame: mint (single per FID)
+app.post('/frame/mint', rateLimit, (req, res) => {
+  const fid = Number(req.body?.['untrustedData[fid]'] ?? req.body?.fid ?? 0);
   const minted = loadMinted();
-  const already = minted.includes(Number(fid));
-
-  let title, image;
-  if (already) {
-    title = 'Already Minted';
-    image = `${PUBLIC_BASE_URL}/static/already.svg`;
-  } else {
-    minted.push(Number(fid));
+  if (!minted.includes(fid)) {
+    minted.push(fid);
     saveMinted(minted);
-    title = 'WarpCat Minted';
-    image = `${PUBLIC_BASE_URL}/static/thanks.svg`;
   }
+  const html = `<!doctype html><html><head>
+    <meta property="og:title" content="WarpCat Minted"/>
+    <meta property="og:image" content="${PUBLIC_BASE_URL}/static/thanks.svg"/>
+    <meta property="fc:frame" content="vNext"/>
+    <meta property="fc:frame:button:1" content="View"/>
+    <meta property="fc:frame:post_url" content="${PUBLIC_BASE_URL}/frame/view"/>
+  </head><body></body></html>`;
+  res.type('html').send(html);
+});
 
-  const html = `
-  <!doctype html><html><head>
-    <meta property="og:title" content="${title}"/>
-    <meta property="og:image" content="${image}"/>
+// Frame: already minted state
+app.post('/frame/already', (_req, res) => {
+  const html = `<!doctype html><html><head>
+    <meta property="og:title" content="Already Minted"/>
+    <meta property="og:image" content="${PUBLIC_BASE_URL}/static/already.svg"/>
     <meta property="fc:frame" content="vNext"/>
     <meta property="fc:frame:button:1" content="Back"/>
     <meta property="fc:frame:post_url" content="${PUBLIC_BASE_URL}/frame"/>
-  </head><body><h1>${title} (FID: ${fid})</h1></body></html>
-  `;
+  </head><body></body></html>`;
   res.type('html').send(html);
 });
 
-// Dynamic composed SVG for preview
+// Frame: view (links to preview image)
+app.post('/frame/view', (req, res) => {
+  const fid = Number(req.body?.['untrustedData[fid]'] ?? req.body?.fid ?? 0);
+  const img = `${PUBLIC_BASE_URL}/img/preview/${fid}.svg`;
+  const html = `<!doctype html><html><head>
+    <meta property="og:title" content="Your WarpCat"/>
+    <meta property="og:image" content="${img}"/>
+    <meta property="fc:frame" content="vNext"/>
+    <meta property="fc:frame:button:1" content="Back"/>
+    <meta property="fc:frame:post_url" content="${PUBLIC_BASE_URL}/frame"/>
+  </head><body></body></html>`;
+  res.type('html').send(html);
+});
+
+// Dynamic composed SVG
 app.get('/img/preview/:fid.svg', (req, res) => {
   const fid = Number(req.params.fid || 0);
-  const selection = chooseTraits(fid);
-  const svg = composeSVG(fid, selection);
+  const svg = composeSVG(fid, chooseTraits(fid));
   res.set('Content-Type', 'image/svg+xml').send(svg);
 });
 
-// Static placeholder SVGs
+// Simple metadata (future on-chain use)
+app.get('/metadata/:fid', (req, res) => {
+  const fid = Number(req.params.fid || 0);
+  const traits = chooseTraits(fid);
+  const image = `${PUBLIC_BASE_URL}/img/preview/${fid}.svg`;
+  const attrs = Object.entries(traits).map(([k, v]) => ({ trait_type: k, value: v?.id || 'none' }));
+  res.json({
+    name: `WarpCat #${fid}`,
+    description: 'WarpCat — generated from your Farcaster identity.',
+    image,
+    external_url: `${PUBLIC_BASE_URL}/frame`,
+    attributes: attrs
+  });
+});
+
+// Static placeholders
 app.get('/static/:which.svg', (req, res) => {
   const which = req.params.which;
   const label = which === 'thanks' ? 'Minted' : which === 'already' ? 'Already Minted' : 'WarpCat';
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='630'>
-    <rect width='100%' height='100%' fill='#1f2937'/>
+    <rect width='100%' height='100%' fill='#111827'/>
     <text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='48' fill='#fff'>${label}</text>
   </svg>`;
   res.set('Content-Type', 'image/svg+xml').send(svg);
 });
 
-// Development helper page
+// Dev helper
 app.get('/dev', (_req, res) => {
-  const html = `
-  <!doctype html><html><head><meta charset="utf-8"><title>WarpCat Dev</title></head>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>WarpCat Dev</title></head>
   <body style="font-family: Arial; padding:20px;">
     <h2>WarpCat — Compositor Test</h2>
-    <form action="/frame/preview" method="post" style="margin-bottom:20px;">
-      <label>FID: <input name="untrustedData[fid]" value="12345" /></label>
-      <button type="submit">Preview</button>
-    </form>
     <p><a href="/img/preview/12345.svg" target="_blank">/img/preview/12345.svg</a></p>
-    <p><a href="/frame" target="_blank">/frame</a> — <a href="/health" target="_blank">/health</a></p>
+    <form action="/frame/preview" method="post"><label>FID: <input name="untrustedData[fid]" value="12345"/></label>
+    <button type="submit">Preview</button></form>
   </body></html>`;
   res.type('html').send(html);
 });
 
-// Start server
 app.listen(PORT, () => {
   console.log(`WarpCat backend listening at ${PUBLIC_BASE_URL}/frame`);
 });

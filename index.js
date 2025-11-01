@@ -11,7 +11,16 @@ const __dirname  = path.dirname(__filename);
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+app.use(express.json()); 
+
+// Log crawlers hitting frame routes
+app.use((req, _res, next) => {
+  if (req.path.startsWith('/frame')) {
+    console.log(`[FRAME HIT] ${req.method} ${req.originalUrl} UA="${req.headers['user-agent']}"`);
+  }
+  next();
+});
+
 
 /* Global no-store to avoid stale frame cards */
 app.use((_, res, next) => {
@@ -262,6 +271,33 @@ app.post('/frame/minted', (req, res) => {
   res.json({ ok: true });
 });
 
+// Minimal, static-image debug frame (absolutely safe for crawlers)
+app.get('/frame/debug', (req, res) => {
+  const img = `${PUBLIC_BASE_URL}/static/og.png`; // statik görsel
+  const tx  = `${PUBLIC_BASE_URL}/frame/tx?fid=0`;
+  const next = `${PUBLIC_BASE_URL}/frame/debug`;
+
+  const html = `<!doctype html><html><head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta property="og:title" content="WarpCat Debug"/>
+    <meta property="og:image" content="${img}"/>
+    <meta property="og:url" content="${next}"/>
+
+    <meta name="fc:frame" content="vNext"/>
+    <meta name="fc:frame:image" content="${img}"/>
+    <meta name="fc:frame:image:aspect_ratio" content="1:1"/>
+    <meta name="fc:frame:button:1" content="Mint"/>
+    <meta name="fc:frame:button:1:action" content="tx"/>
+    <meta name="fc:frame:button:1:target" content="${tx}"/>
+    <meta name="fc:frame:button:2" content="Refresh"/>
+    <meta name="fc:frame:button:2:action" content="post"/>
+    <meta name="fc:frame:post_url" content="${next}"/>
+  </head><body></body></html>`;
+  res.type('html').send(html);
+});
+
+
 /* root -> /frame */
 app.get('/', (_req, res) => res.redirect(302, '/frame'));
 
@@ -272,3 +308,4 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat backend listening at ${PUBLIC_BASE_URL}/frame`);
 });
+

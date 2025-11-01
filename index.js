@@ -235,6 +235,43 @@ function sendFrameHome(req, res) {
 app.get('/frame/home', sendFrameHome);
 app.post('/frame/home', sendFrameHome);
 
+app.get('/frame/home', (req, res) => {
+  const fid = String(req.query.fid || '12345');
+
+  // İstersen geçici olarak statik görseli kullan
+  // const img = `${PUBLIC_BASE_URL}/static/og.png`;
+
+  // Dinamik PNG (önerilen) — artık doğru header'larla dönüyor:
+  const img = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`;
+
+  const txUrl = `${PUBLIC_BASE_URL}/frame/tx?fid=${encodeURIComponent(fid)}`;
+  const nextUrl = `${PUBLIC_BASE_URL}/frame/home?fid=${encodeURIComponent(fid)}`;
+
+  const html = `<!doctype html><html><head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta property="og:title" content="WarpCat Preview"/>
+    <meta property="og:image" content="${img}"/>
+    <meta property="og:url" content="${nextUrl}"/>
+
+    <meta name="fc:frame" content="vNext"/>
+    <meta name="fc:frame:image" content="${img}"/>
+    <meta name="fc:frame:image:aspect_ratio" content="1:1"/>
+
+    <meta name="fc:frame:button:1" content="Mint"/>
+    <meta name="fc:frame:button:1:action" content="tx"/>
+    <meta name="fc:frame:button:1:target" content="${txUrl}"/>
+
+    <meta name="fc:frame:button:2" content="Refresh"/>
+    <meta name="fc:frame:button:2:action" content="post"/>
+    <meta name="fc:frame:post_url" content="${nextUrl}"/>
+  </head><body></body></html>`;
+
+  res.set('cache-control', 'no-store, max-age=0');
+  res.type('html').send(html);
+});
+
+
 /* Farcaster usually POSTs to /frame — support it the same way */
 app.post('/frame', sendFrameHome);
 
@@ -311,5 +348,6 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat backend listening at ${PUBLIC_BASE_URL}/frame`);
 });
+
 
 

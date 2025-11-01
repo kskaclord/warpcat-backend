@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200">
+  <!-- yana klar -->
+  <ellipse cx="430" cy="820" rx="55" ry="28" fill="#6b4a4a" opacity=".45"/>
+  <ellipse cx="770" cy="820" rx="55" ry="28" fill="#6b4a4a" opacity=".45"/>
+
+  <!-- gülümseme -->
+  <path d="M380 900 Q600 980 820 900" fill="none" stroke="#e8df0a" stroke-width="24" stroke-linecap="round"/>
+</svg>

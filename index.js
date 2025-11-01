@@ -166,6 +166,8 @@ function frameHead({ fid }) {
   const frameImg  = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`;
   const txUrl     = `${PUBLIC_BASE_URL}/frame/tx?fid=${encodeURIComponent(fid)}`;
   const postUrl   = `${PUBLIC_BASE_URL}/frame/home?fid=${encodeURIComponent(fid)}`;
+  <meta property="og:image:secure_url" content="https://api.warpcat.xyz/static/og.png"/>
+
 
   return `
   <meta charset="utf-8"/>
@@ -307,4 +309,5 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat backend listening at ${PUBLIC_BASE_URL}/frame`);
 });
+
 

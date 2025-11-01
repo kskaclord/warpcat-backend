@@ -143,18 +143,21 @@ app.get('/frame/preview', (req, res) => {
 
 /* raw images used by preview/frames */
 app.get('/img/preview/:fid.png', async (req, res) => {
+  const fid = String(req.params.fid || '0');
   try {
-    const svg = buildSvg(String(req.params.fid || '0'));
-    const png = await svgToPng(svg);
-    res.set('Content-Type', 'image/png').send(png);
+    const svg = buildSvg(fid);
+    const png = await svgToPng(svg); // Buffer
+
+    res.set({
+      'content-type': 'image/png',
+      'cache-control': 'public, max-age=60',  // çok uzun değil
+      'content-length': png.length
+    });
+    res.send(png);
   } catch (e) {
     console.error('png error', e);
     res.status(500).send('img error');
   }
-});
-app.get('/img/preview/:fid.svg', (req, res) => {
-  const svg = buildSvg(String(req.params.fid || '0'));
-  res.set('Content-Type', 'image/svg+xml').send(svg);
 });
 
 /* -------------------- Frames (meta endpoints) -------------------- */
@@ -308,4 +311,5 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat backend listening at ${PUBLIC_BASE_URL}/frame`);
 });
+
 

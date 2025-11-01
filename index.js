@@ -11,16 +11,14 @@ const __dirname  = path.dirname(__filename);
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json()); 
+app.use(express.json());
 
-// Log crawlers hitting frame routes
+/* Request log — frame ve image’ları da görelim */
 app.use((req, _res, next) => {
-  if (req.path.startsWith('/frame')) {
-    console.log(`[FRAME HIT] ${req.method} ${req.originalUrl} UA="${req.headers['user-agent']}"`);
-  }
+  const ua = req.headers['user-agent'] || '';
+  console.log(`[REQ] ${req.method} ${req.originalUrl} UA="${ua}"`);
   next();
 });
-
 
 /* Global no-store to avoid stale frame cards */
 app.use((_, res, next) => {
@@ -28,9 +26,9 @@ app.use((_, res, next) => {
   next();
 });
 
-/* Static assets for generic OG preview image */
+/* Static assets for OG preview image */
 const STATIC_A = path.join(__dirname, 'static');   // preferred
-const STATIC_B = path.join(__dirname, 'statics');  // user’s folder name
+const STATIC_B = path.join(__dirname, 'statics');  // your folder name
 if (fs.existsSync(STATIC_A)) app.use('/static', express.static(STATIC_A));
 if (fs.existsSync(STATIC_B)) app.use('/static', express.static(STATIC_B));
 
@@ -44,13 +42,8 @@ const PUBLIC_BASE_URL =
 const CHAIN_ID         = process.env.CHAIN_ID ? `eip155:${process.env.CHAIN_ID}` : 'eip155:8453';
 const CONTRACT_ADDRESS = (process.env.CONTRACT_ADDRESS || '').toLowerCase(); // REQUIRED for /frame/tx
 const MINT_PRICE_WEI   = process.env.MINT_PRICE_WEI || '500000000000000';    // 0.0005 ETH default
-// Set to 4-byte selector for mint(uint256) if your contract needs it (example dummy): 0x40c10f19
+// 4-byte selector for mint(uint256 fid) gerekiyorsa: 0x40c10f19; paramsız mint ise boş bırak.
 const MINT_SELECTOR    = (process.env.MINT_SELECTOR || '').toLowerCase();
-
-// optional gating placeholders (disabled now)
-// const PRO_ONLY = (process.env.PRO_ONLY || 'false') === 'true';
-// const POWER_BADGE_ONLY = (process.env.POWER_BADGE_ONLY || 'false') === 'true';
-// const MIN_NEYNAR_SCORE = Number(process.env.MIN_NEYNAR_SCORE || 0);
 
 /* -------------------- Minimal store -------------------- */
 const DATA_DIR = path.join(__dirname, 'data');
@@ -102,16 +95,10 @@ function buildSvg(fid) {
 
   return `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200">
-  <defs>
-    <style>.shadow{filter:drop-shadow(0 4px 24px rgba(0,0,0,.35));}</style>
-  </defs>
+  <defs><style>.shadow{filter:drop-shadow(0 4px 24px rgba(0,0,0,.35));}</style></defs>
   ${bg}
-  <g class="shadow">
-    ${face}${aura}${eyes}${mouth}${head}${acc}
-  </g>
-  <text x="48" y="1140" font-size="28" fill="#ffffffaa" font-family="Inter, Arial, sans-serif">
-    WarpCat • FID ${fid}
-  </text>
+  <g class="shadow">${face}${aura}${eyes}${mouth}${head}${acc}</g>
+  <text x="48" y="1140" font-size="28" fill="#ffffffaa" font-family="Inter, Arial, sans-serif">WarpCat • FID ${fid}</text>
 </svg>`.trim();
 }
 async function svgToPng(svg) {
@@ -142,15 +129,14 @@ app.get('/frame/preview', (req, res) => {
 });
 
 /* raw images used by preview/frames */
-app.get('/img/preview/:fid.png', async (req, res) => {
+async function servePreviewPng(req, res) {
   const fid = String(req.params.fid || '0');
   try {
     const svg = buildSvg(fid);
-    const png = await svgToPng(svg); // Buffer
-
+    const png = await svgToPng(svg);
     res.set({
       'content-type': 'image/png',
-      'cache-control': 'public, max-age=60',  // çok uzun değil
+      'cache-control': 'public, max-age=60',
       'content-length': png.length
     });
     res.send(png);
@@ -158,30 +144,50 @@ app.get('/img/preview/:fid.png', async (req, res) => {
     console.error('png error', e);
     res.status(500).send('img error');
   }
+}
+app.get('/img/preview/:fid.png', servePreviewPng);
+/* bazı botlar HEAD atıyor */
+app.head('/img/preview/:fid.png', async (req, res) => {
+  const fid = String(req.params.fid || '0');
+  try {
+    const svg = buildSvg(fid);
+    const png = await svgToPng(svg);
+    res.set({
+      'content-type': 'image/png',
+      'cache-control': 'public, max-age=60',
+      'content-length': png.length
+    });
+    res.status(200).end();
+  } catch {
+    res.status(500).end();
+  }
 });
 
 /* -------------------- Frames (meta endpoints) -------------------- */
-/** helper: returns full HTML head with frame meta */
+/** frame HEAD builder
+ * og/twitter IMAGE:  static/og.png  (kart güvenli)
+ * fc:frame:image   : dynamic PNG    (Frame görseli)
+ */
 function frameHead({ fid }) {
-  const image   = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`;
-  const txUrl   = `${PUBLIC_BASE_URL}/frame/tx?fid=${encodeURIComponent(fid)}`;
-  const postUrl = `${PUBLIC_BASE_URL}/frame/home?fid=${encodeURIComponent(fid)}`;
-
-  // try to serve og.png if someone shares /frame directly (non-frame clients)
-  const fallbackOg = `${PUBLIC_BASE_URL}/static/og.png`;
+  const ogImage   = `${PUBLIC_BASE_URL}/static/og.png`; // kart için sabit
+  const frameImg  = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`;
+  const txUrl     = `${PUBLIC_BASE_URL}/frame/tx?fid=${encodeURIComponent(fid)}`;
+  const postUrl   = `${PUBLIC_BASE_URL}/frame/home?fid=${encodeURIComponent(fid)}`;
 
   return `
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
+
   <meta property="og:title" content="WarpCat Preview"/>
-  <meta property="og:image" content="${image}"/>
+  <meta property="og:image" content="${ogImage}"/>
+  <meta property="og:image:width" content="1024"/>
+  <meta property="og:image:height" content="1024"/>
   <meta property="og:url" content="${postUrl}"/>
   <meta name="twitter:card" content="summary_large_image"/>
-  <meta name="twitter:image" content="${image}"/>
+  <meta name="twitter:image" content="${ogImage}"/>
 
-  <!-- vNext frame -->
   <meta name="fc:frame" content="vNext"/>
-  <meta name="fc:frame:image" content="${image}"/>
+  <meta name="fc:frame:image" content="${frameImg}"/>
   <meta name="fc:frame:image:aspect_ratio" content="1:1"/>
 
   <meta name="fc:frame:button:1" content="Mint"/>
@@ -190,11 +196,9 @@ function frameHead({ fid }) {
 
   <meta name="fc:frame:button:2" content="Refresh"/>
   <meta name="fc:frame:button:2:action" content="post"/>
-
   <meta name="fc:frame:post_url" content="${postUrl}"/>
 
-  <!-- non-frame fallback image -->
-  <link rel="preload" as="image" href="${fallbackOg}"/>
+  <link rel="preload" as="image" href="${ogImage}"/>
 `;
 }
 
@@ -217,62 +221,22 @@ app.get('/frame', (_req, res) => {
   res.status(200).type('html').send(html);
 });
 
-/* Frame HOME (GET+POST). Blank body is normal; meta lives in <head>. */
+/* Frame HOME (GET+POST) — TEK TANIM */
 function sendFrameHome(req, res) {
   const fid = String((req.query && (req.query.fid || req.query.id)) ||
                      (req.body && (req.body.fid || req.body.id)) || '12345');
 
-  const html = `<!doctype html>
-<html>
-  <head>
+  const html = `<!doctype html><html><head>
     ${frameHead({ fid })}
     <title>WarpCat Preview</title>
-  </head>
-  <body></body>
-</html>`;
+  </head><body></body></html>`;
+  res.set('cache-control', 'no-store, max-age=0');
   res.status(200).type('html').send(html);
 }
 app.get('/frame/home', sendFrameHome);
 app.post('/frame/home', sendFrameHome);
 
-app.get('/frame/home', (req, res) => {
-  const fid = String(req.query.fid || '12345');
-
-  // İstersen geçici olarak statik görseli kullan
-  // const img = `${PUBLIC_BASE_URL}/static/og.png`;
-
-  // Dinamik PNG (önerilen) — artık doğru header'larla dönüyor:
-  const img = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`;
-
-  const txUrl = `${PUBLIC_BASE_URL}/frame/tx?fid=${encodeURIComponent(fid)}`;
-  const nextUrl = `${PUBLIC_BASE_URL}/frame/home?fid=${encodeURIComponent(fid)}`;
-
-  const html = `<!doctype html><html><head>
-    <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <meta property="og:title" content="WarpCat Preview"/>
-    <meta property="og:image" content="${img}"/>
-    <meta property="og:url" content="${nextUrl}"/>
-
-    <meta name="fc:frame" content="vNext"/>
-    <meta name="fc:frame:image" content="${img}"/>
-    <meta name="fc:frame:image:aspect_ratio" content="1:1"/>
-
-    <meta name="fc:frame:button:1" content="Mint"/>
-    <meta name="fc:frame:button:1:action" content="tx"/>
-    <meta name="fc:frame:button:1:target" content="${txUrl}"/>
-
-    <meta name="fc:frame:button:2" content="Refresh"/>
-    <meta name="fc:frame:button:2:action" content="post"/>
-    <meta name="fc:frame:post_url" content="${nextUrl}"/>
-  </head><body></body></html>`;
-
-  res.set('cache-control', 'no-store, max-age=0');
-  res.type('html').send(html);
-});
-
-
-/* Farcaster usually POSTs to /frame — support it the same way */
+/* Farcaster genelde POST /frame de yapar */
 app.post('/frame', sendFrameHome);
 
 /* -------------------- Frame TX endpoint -------------------- */
@@ -285,8 +249,6 @@ function sendTx(req, res) {
   if (!CONTRACT_ADDRESS) {
     return res.status(500).json({ error: 'CONTRACT_ADDRESS missing' });
   }
-
-  // (Gating noktasını burada uygularız; şimdilik kapalı)
 
   const tx = {
     chainId: CHAIN_ID,
@@ -311,12 +273,11 @@ app.post('/frame/minted', (req, res) => {
   res.json({ ok: true });
 });
 
-// Minimal, static-image debug frame (absolutely safe for crawlers)
-app.get('/frame/debug', (req, res) => {
-  const img = `${PUBLIC_BASE_URL}/static/og.png`; // statik görsel
+/* Minimal, static-image debug frame */
+app.get('/frame/debug', (_req, res) => {
+  const img = `${PUBLIC_BASE_URL}/static/og.png`;
   const tx  = `${PUBLIC_BASE_URL}/frame/tx?fid=0`;
   const next = `${PUBLIC_BASE_URL}/frame/debug`;
-
   const html = `<!doctype html><html><head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -329,14 +290,12 @@ app.get('/frame/debug', (req, res) => {
     <meta name="fc:frame:image:aspect_ratio" content="1:1"/>
     <meta name="fc:frame:button:1" content="Mint"/>
     <meta name="fc:frame:button:1:action" content="tx"/>
-    <meta name="fc:frame:button:1:target" content="${tx}"/>
     <meta name="fc:frame:button:2" content="Refresh"/>
     <meta name="fc:frame:button:2:action" content="post"/>
     <meta name="fc:frame:post_url" content="${next}"/>
   </head><body></body></html>`;
   res.type('html').send(html);
 });
-
 
 /* root -> /frame */
 app.get('/', (_req, res) => res.redirect(302, '/frame'));
@@ -348,6 +307,3 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat backend listening at ${PUBLIC_BASE_URL}/frame`);
 });
-
-
-

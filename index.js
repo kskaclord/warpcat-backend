@@ -225,37 +225,68 @@ app.get('/img/preview/:fid.svg', (req, res) => {
 });
 
 // ======= Frames meta (entry) =======
-// This is what you should paste into Warpcast composer:  https://api.warpcat.xyz/frame/home?fid=12345&_v=1
-app.get('/frame/home', (req, res) => {
-  const fid   = String(req.query.fid || '12345');
-  const v     = String(req.query._v || '1'); // cache buster if needed
-  const img   = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png?v=${encodeURIComponent(v)}`;
-  const txUrl = `${PUBLIC_BASE_URL}/frame/tx?fid=${encodeURIComponent(fid)}`;
-  const next  = `${PUBLIC_BASE_URL}/frame/home?fid=${encodeURIComponent(fid)}&_v=${Date.now()}`;
+// Paste this into Warpcast composer:  https://api.warpcat.xyz/frame/home?fid=12345&_v=1
+function frameHomeHtml({ fid, v }) {
+  const ogImg   = `${PUBLIC_BASE_URL}/static/og.png`; // card için statik görsel
+  const frameImg= `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png?v=${encodeURIComponent(v)}`;
+  const txUrl   = `${PUBLIC_BASE_URL}/frame/tx?fid=${encodeURIComponent(fid)}`;
+  const nextUrl = `${PUBLIC_BASE_URL}/frame/home?fid=${encodeURIComponent(fid)}&_v=${Date.now()}`;
+  const pageUrl = `${PUBLIC_BASE_URL}/frame/home?fid=${encodeURIComponent(fid)}&_v=${encodeURIComponent(v)}`;
 
-  const html = `<!doctype html><html><head>
+  return `<!doctype html><html><head>
     <meta charset="utf-8"/>
+    <title>WarpCat Preview</title>
+
+    <!-- OpenGraph for the LINK CARD -->
+    <meta property="og:type" content="website"/>
+    <meta property="og:site_name" content="WarpCat"/>
+    <meta property="og:url" content="${pageUrl}"/>
     <meta property="og:title" content="WarpCat Preview"/>
-    <meta property="og:image" content="${img}"/>
+    <meta property="og:description" content="Mint your WarpCat from your Farcaster FID."/>
+    <meta property="og:image" content="${ogImg}"/>
+    <meta property="og:image:width" content="1200"/>
+    <meta property="og:image:height" content="630"/>
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image"/>
+    <meta name="twitter:title" content="WarpCat Preview"/>
+    <meta name="twitter:image" content="${ogImg}"/>
+
+    <!-- Frames vNext -->
     <meta name="fc:frame" content="vNext"/>
-    <meta name="fc:frame:image" content="${img}"/>
+    <meta name="fc:frame:image" content="${frameImg}"/>
     <meta name="fc:frame:button:1" content="Mint"/>
     <meta name="fc:frame:button:1:action" content="tx"/>
     <meta name="fc:frame:button:1:target" content="${txUrl}"/>
     <meta name="fc:frame:button:2" content="Refresh"/>
     <meta name="fc:frame:button:2:action" content="post"/>
-    <meta name="fc:frame:post_url" content="${next}"/>
-    <meta name="twitter:card" content="summary_large_image"/>
+    <meta name="fc:frame:post_url" content="${nextUrl}"/>
   </head><body></body></html>`;
+}
+
+// GET: used by browsers & Warpcast fetcher
+app.get('/frame/home', (req, res) => {
+  const fid = String(req.query.fid || '12345');
+  const v   = String(req.query._v || '1');
+
+  const html = frameHomeHtml({ fid, v });
+  // Not: previewcunun cache’lemesine izin ver (bazı fetcher’lar no-store’da nazlı oluyor)
   res.set('Content-Type', 'text/html; charset=utf-8');
+  res.set('Cache-Control', 'public, max-age=120'); // 2 dk
   res.status(200).send(html);
 });
 
-// Frames POST root → redirect to /frame/home with a default fid
-app.post('/frame', (req, res) => {
-  const fid = '12345';
-  res.redirect(302, `/frame/home?fid=${fid}&_v=${Date.now()}`);
+// HEAD: bazı fetcher’lar önce HEAD atıyor; aynı head’leri verelim
+app.head('/frame/home', (req, res) => {
+  const fid = String(req.query.fid || '12345');
+  const v   = String(req.query._v || '1');
+
+  // body göndermiyoruz ama OG/headers aynı
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.set('Cache-Control', 'public, max-age=120');
+  res.status(200).end();
 });
+
 
 // ======= Frames TX endpoint (GET for manual test, POST for frames) =======
 function buildTx(fid) {
@@ -306,3 +337,4 @@ app.get('/health', (_req, res) => res.status(200).send('ok'));
 app.listen(PORT, () => {
   console.log(`WarpCat backend listening at ${PUBLIC_BASE_URL}/frame`);
 });
+

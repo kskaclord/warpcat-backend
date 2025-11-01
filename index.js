@@ -20,11 +20,6 @@ app.use((req, _res, next) => {
   next();
 });
 
-/* Global no-store to avoid stale frame cards */
-app.use((_, res, next) => {
-  res.setHeader('Cache-Control', 'no-store, max-age=0');
-  next();
-});
 
 /* Static assets for OG preview image */
 const STATIC_A = path.join(__dirname, 'static');   // preferred
@@ -145,24 +140,22 @@ async function servePreviewPng(req, res) {
     res.status(500).send('img error');
   }
 }
-app.get('/img/preview/:fid.png', servePreviewPng);
-/* bazı botlar HEAD atıyor */
-app.head('/img/preview/:fid.png', async (req, res) => {
+app.get('/img/preview/:fid.png', async (req, res) => {
   const fid = String(req.params.fid || '0');
   try {
     const svg = buildSvg(fid);
     const png = await svgToPng(svg);
     res.set({
       'content-type': 'image/png',
-      'cache-control': 'public, max-age=60',
+      'cache-control': 'public, max-age=600',
       'content-length': png.length
     });
-    res.status(200).end();
-  } catch {
-    res.status(500).end();
+    res.send(png);
+  } catch (e) {
+    console.error('png error', e);
+    res.status(500).send('img error');
   }
 });
-
 /* -------------------- Frames (meta endpoints) -------------------- */
 /** frame HEAD builder
  * og/twitter IMAGE:  static/og.png  (kart güvenli)
@@ -226,10 +219,17 @@ function sendFrameHome(req, res) {
   const fid = String((req.query && (req.query.fid || req.query.id)) ||
                      (req.body && (req.body.fid || req.body.id)) || '12345');
 
-  const html = `<!doctype html><html><head>
+  const html = `<!doctype html>
+<html>
+  <head>
     ${frameHead({ fid })}
+    <meta property="og:type" content="website"/>
+    <meta property="og:image:width" content="1024"/>
+    <meta property="og:image:height" content="1024"/>
     <title>WarpCat Preview</title>
-  </head><body></body></html>`;
+  </head>
+  <body></body>
+</html>`;
   res.set('cache-control', 'no-store, max-age=0');
   res.status(200).type('html').send(html);
 }
@@ -307,3 +307,4 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat backend listening at ${PUBLIC_BASE_URL}/frame`);
 });
+

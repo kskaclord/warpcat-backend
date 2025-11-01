@@ -1,4 +1,4 @@
-// index.js — WarpCat (poster frame)
+// index.js — WarpCat backend (Frames + Preview + Eligibility Gate)
 
 import 'dotenv/config';
 import express from 'express';
@@ -7,14 +7,14 @@ import path from 'path';
 import sharp from 'sharp';
 import { fileURLToPath } from 'url';
 
+/* ================== BOOT ================== */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
-
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-/* ========== CONFIG ========== */
+/* ================== CONFIG ================== */
 const PORT = Number(process.env.PORT || 8080);
 const PUBLIC_BASE_URL =
   (process.env.PUBLIC_BASE_URL && process.env.PUBLIC_BASE_URL.replace(/\/$/, '')) ||
@@ -25,138 +25,137 @@ const ASSETS_DIR  = path.join(__dirname, 'assets');
 const TRAITS_DIR  = path.join(__dirname, 'traits');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-/* ========== CHAIN / MINT ========== */
-const CHAIN_ID         = process.env.CHAIN_ID ? `eip155:${process.env.CHAIN_ID}` : 'eip155:8453';
-const CONTRACT_ADDRESS = (process.env.CONTRACT_ADDRESS || '').toLowerCase();
-const MINT_PRICE_WEI   = process.env.MINT_PRICE_WEI || '500000000000000'; // 0.0005 ETH
-const MINT_SELECTOR    = (process.env.MINT_SELECTOR || '').toLowerCase(); // e.g. 0x12345678
+/* ============ CHAIN / MINT CONFIG ============ */
+const CHAIN_ID         = process.env.CHAIN_ID ? `eip155:${process.env.CHAIN_ID}` : 'eip155:8453'; // Base
+const CONTRACT_ADDRESS = (process.env.CONTRACT_ADDRESS || '').toLowerCase(); // your ERC721/1155
+const MINT_PRICE_WEI   = process.env.MINT_PRICE_WEI || '500000000000000';    // 0.0005 ETH default
+const MINT_SELECTOR    = (process.env.MINT_SELECTOR || '').toLowerCase();    // e.g. 0xabcdef01 for mint(uint256)
 
-/* ========== SIMPLE DB ========== */
+/* ============ ELIGIBILITY (OFF-CHAIN) ============ */
+const PRO_ONLY         = String(process.env.PRO_ONLY || 'false').toLowerCase() === 'true';
+const POWER_BADGE_ONLY = String(process.env.POWER_BADGE_ONLY || 'false').toLowerCase() === 'true';
+const MIN_NEYNAR_SCORE = Number(process.env.MIN_NEYNAR_SCORE || '0');
+const NEYNAR_API_KEY   = process.env.NEYNAR_API_KEY || '';
+
+async function fetchUserFromNeynar(fid) {
+  if (!NEYNAR_API_KEY) return null;
+  try {
+    const url = `https://api.neynar.com/v2/farcaster/user/bulk?fids=${encodeURIComponent(fid)}&viewer_fid=${encodeURIComponent(fid)}`;
+    const r = await fetch(url, { headers: { accept: 'application/json', api_key: NEYNAR_API_KEY } });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const u = j.users?.[0] || j.result?.users?.[0] || null;
+    if (!u) return null;
+
+    const powerBadge =
+      !!(u.power_badge || u.verifications?.power_badge || u.farcaster_user?.power_badge);
+    const score = Number(u.score ?? u.neynar_score ?? u.rank_score ?? 0);
+    const isPro =
+      !!(u.is_premium || u.is_pro || u.warpcast_pro || u.viewer_context?.is_premium || u.viewer_context?.is_pro);
+
+    return { isPro, powerBadge, score };
+  } catch (e) {
+    console.error('neynar error', e);
+    return null;
+  }
+}
+async function isEligible(fid) {
+  if (!PRO_ONLY && !POWER_BADGE_ONLY && MIN_NEYNAR_SCORE <= 0) return true;
+  const u = await fetchUserFromNeynar(fid);
+  if (!u) return false;
+  if (PRO_ONLY && !u.isPro) return false;
+  if (POWER_BADGE_ONLY && !u.powerBadge) return false;
+  if (MIN_NEYNAR_SCORE > 0 && !(u.score >= MIN_NEYNAR_SCORE)) return false;
+  return true;
+}
+
+/* ============== SIMPLE STORAGE (OPTIONAL) ============== */
 const MINTED_FILE = path.join(DATA_DIR, 'minted.json');
-const readMinted  = () => { try { return JSON.parse(fs.readFileSync(MINTED_FILE,'utf8')); } catch { return {}; } };
-const writeMinted = (obj) => fs.writeFileSync(MINTED_FILE, JSON.stringify(obj, null, 2));
+function readMinted() {
+  try { return JSON.parse(fs.readFileSync(MINTED_FILE, 'utf8')); }
+  catch { return {}; }
+}
+function writeMinted(obj) {
+  fs.writeFileSync(MINTED_FILE, JSON.stringify(obj, null, 2));
+}
 
-/* ========== HELPERS ========== */
-const toHex = (n) => (typeof n === 'string' && n.startsWith('0x')) ? n : '0x'+BigInt(n).toString(16);
-const uint256Hex = (n) => ('0x' + BigInt(n).toString(16).padStart(64, '0'));
-
+/* ============== UTIL ENCODERS ============== */
+function toHex(n) {
+  if (typeof n === 'string' && n.startsWith('0x')) return n;
+  return '0x' + BigInt(n).toString(16);
+}
+function uint256Hex(n) {
+  const hex = BigInt(n).toString(16);
+  return '0x' + hex.padStart(64, '0');
+}
 function buildMintData(fid) {
-  if (!MINT_SELECTOR || MINT_SELECTOR.length !== 10 || !MINT_SELECTOR.startsWith('0x')) return '0x';
+  if (!MINT_SELECTOR || MINT_SELECTOR.length !== 10 || !MINT_SELECTOR.startsWith('0x')) {
+    // No selector provided -> payable mint without calldata
+    return '0x';
+  }
   return (MINT_SELECTOR + uint256Hex(fid).slice(2)).toLowerCase();
 }
 
-function pickOne(arr, seed) {
-  if (!arr.length) return null;
-  return arr[Number(BigInt(seed) % BigInt(arr.length))];
+/* ============== TRAIT / ASSET HELPERS ============== */
+function randFrom(arr, seed) {
+  const i = Number(BigInt(seed) % BigInt(arr.length));
+  return arr[i];
 }
-
-function hasAsset(rel) { return fs.existsSync(path.join(ASSETS_DIR, rel)); }
-function readAsset(rel) { return fs.readFileSync(path.join(ASSETS_DIR, rel), 'utf8'); }
-
-function ensureAsset(rel, fallbackRel = null) {
-  if (hasAsset(rel)) return readAsset(rel);
-  if (fallbackRel && hasAsset(fallbackRel)) {
-    console.warn(`Missing asset: ${rel} → fallback ${fallbackRel}`);
-    return readAsset(fallbackRel);
+function ensureAsset(relPath, fallback) {
+  const p = path.join(ASSETS_DIR, relPath);
+  if (fs.existsSync(p)) return fs.readFileSync(p, 'utf8');
+  if (fallback) {
+    const fb = path.join(ASSETS_DIR, fallback);
+    if (fs.existsSync(fb)) {
+      console.warn(`Missing asset: ${relPath} → fallback ${fallback}`);
+      return fs.readFileSync(fb, 'utf8');
+    }
   }
-  console.warn(`Missing asset: ${rel}`);
-  return ''; // empty
+  console.warn(`Missing asset: ${relPath}`);
+  return '';
 }
 
-/* ========== SVG LAYERING ========== */
-// if body/eyes/mouth/headgear yoksa bozulmasın diye basit fallback kedi
-function fallbackCatGroup(fid) {
-  return `
-    <g transform="translate(100,150)">
-      <ellipse cx="500" cy="500" rx="420" ry="360" fill="#332944" stroke="#0b0b0b" stroke-width="18"/>
-      <g fill="#1e1926" stroke="#0b0b0b" stroke-width="10">
-        <polygon points="240,110 320,300 110,280"/>
-        <polygon points="740,110 660,300 870,280"/>
-      </g>
-      <g>
-        <ellipse cx="420" cy="520" rx="95" ry="36" fill="#fff"/>
-        <circle cx="420" cy="520" r="10" fill="#111"/>
-        <ellipse cx="590" cy="520" rx="95" ry="36" fill="#fff"/>
-        <circle cx="590" cy="520" r="10" fill="#111"/>
-        <path d="M360 690 q160 60 320 0" stroke="#e6da08" stroke-width="20" fill="none" stroke-linecap="round"/>
-      </g>
-    </g>
-  `;
-}
+/* ============== SVG COMPOSITOR ============== */
+function buildSvg(fid) {
+  const bgOptions = ['neon_purple.svg', 'hologrid.svg', 'pink_grad.svg'].filter(f =>
+    fs.existsSync(path.join(ASSETS_DIR, 'background', f))
+  );
+  const bgName = bgOptions.length ? randFrom(bgOptions, fid) : 'neon_purple.svg';
+  const bgSvg  = ensureAsset(`background/${bgName}`, 'background/neon_purple.svg');
 
-function buildCatFromAssets(fid) {
-  const face = ensureAsset('body/cat_base.svg', null);
-  const eyes = ensureAsset('eyes/sharp.svg', null);
-  const mouth = ensureAsset('mouth/smile.svg', null);
-  const head = ensureAsset('headgear/bandana.svg', null);
-  const aura = ensureAsset('aura/none.svg', null);
-  const accessory = ensureAsset('accessory/none.svg', null);
-
-  const any = face || eyes || mouth || head || aura || accessory;
-  if (!any) return fallbackCatGroup(fid);
-
-  return `
-    <g class="cat">
-      ${face || ''}
-      ${aura || ''}
-      ${eyes || ''}
-      ${mouth || ''}
-      ${head || ''}
-      ${accessory || ''}
-    </g>
-  `;
-}
-
-function posterBackground(fid) {
-  const list = ['background/neon_purple.svg','background/hologrid.svg','background/pink_grad.svg']
-    .filter(p => hasAsset(p));
-  const picked = pickOne(list, fid) || 'background/neon_purple.svg';
-  return ensureAsset(picked, 'background/neon_purple.svg');
-}
-
-function buildPosterSvg(fid, title = 'I just minted my WarpCat!', footer = 'Mint Now') {
-  // full poster 1200x1200
-  const bg = posterBackground(fid);
-  const cat = buildCatFromAssets(fid);
+  const face      = ensureAsset('body/cat_base.svg', 'body/cat_base.svg');
+  const eyes      = ensureAsset('eyes/sharp.svg', 'eyes/sharp.svg');
+  const mouth     = ensureAsset('mouth/smile.svg', 'mouth/smile.svg');
+  const headgear  = ensureAsset('headgear/bandana.svg', '');
+  const aura      = ensureAsset('aura/none.svg', '');
+  const accessory = ensureAsset('accessory/none.svg', '');
 
   return `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200">
   <defs>
-    <style>
-      .shadow { filter: drop-shadow(0 8px 30px rgba(0,0,0,.35)); }
-      .title  { font: 700 64px/1.2 Inter,ui-sans-serif,Arial; fill:#ffffff; letter-spacing:.5px; }
-      .foot   { font: 700 40px/1 Inter,ui-sans-serif,Arial; fill:#fff; }
-      .subtle { font: 500 24px/1 Inter,ui-sans-serif,Arial; fill:#ffffffcc; }
-    </style>
+    <style>.shadow{filter:drop-shadow(0 4px 24px rgba(0,0,0,.35));}</style>
   </defs>
-
-  <!-- background -->
-  <g>${bg}</g>
-
-  <!-- header title -->
-  <text x="72" y="120" class="title">${title}</text>
-  <text x="72" y="165" class="subtle">WarpCat • FID ${fid}</text>
-
-  <!-- CAT -->
-  <g class="shadow" transform="translate(0,60)">
-    ${cat}
+  <g>${bgSvg}</g>
+  <g class="shadow">
+    ${face}
+    ${aura}
+    ${eyes}
+    ${mouth}
+    ${headgear}
+    ${accessory}
   </g>
-
-  <!-- footer bar (fake button look) -->
-  <g transform="translate(0,1035)">
-    <rect x="0" y="0" width="1200" height="165" rx="0" fill="#5b3df6"/>
-    <text x="600" y="105" text-anchor="middle" class="foot">${footer}</text>
-  </g>
+  <text x="48" y="1140" font-size="28" fill="#ffffffaa" font-family="Inter,Arial,sans-serif">
+    WarpCat • FID ${fid}
+  </text>
 </svg>`.trim();
 }
 
-/* ========== RENDERERS ========== */
 async function svgToPng(svg) {
-  // 1200x1200 -> 1024x1024 (Frames)
-  return sharp(Buffer.from(svg)).png().resize(1024,1024,{ fit:'cover' }).toBuffer();
+  // Frames-friendly 1024x1024 PNG
+  return await sharp(Buffer.from(svg)).png().resize(1024, 1024, { fit: 'cover' }).toBuffer();
 }
 
-/* ========== BROWSER PAGES ========== */
+/* ============== PUBLIC PAGES ============== */
 app.get('/frame', (_req, res) => {
   const html = `<!doctype html><html><head>
     <meta charset="utf-8"/>
@@ -192,18 +191,18 @@ app.get('/frame/preview', (req, res) => {
         <a style="margin-left:10px" href="${img}" target="_blank">Open PNG</a>
       </form>
     </div>
-    <img src="${img}" width="1024" height="1024" style="max-width:100%; height:auto; display:block;"/>
+    <img src="${img}" width="1024" height="1024" style="max-width:100%;height:auto;display:block;"/>
   </body></html>`;
   res.type('html').send(html);
 });
 
-/* ========== IMAGES ========== */
+/* ============== IMAGE ENDPOINTS ============== */
 app.get('/img/preview/:fid.png', async (req, res) => {
   const fid = String(req.params.fid || '0');
   try {
-    const svg = buildPosterSvg(fid);
+    const svg = buildSvg(fid);
     const png = await svgToPng(svg);
-    res.set('content-type','image/png').send(png);
+    res.set('content-type', 'image/png').send(png);
   } catch (e) {
     console.error('png error', e);
     res.status(500).send('img error');
@@ -211,21 +210,20 @@ app.get('/img/preview/:fid.png', async (req, res) => {
 });
 app.get('/img/preview/:fid.svg', (req, res) => {
   const fid = String(req.params.fid || '0');
-  res.set('content-type','image/svg+xml').send(buildPosterSvg(fid));
+  const svg = buildSvg(fid);
+  res.set('content-type', 'image/svg+xml').send(svg);
 });
 
-/* ========== FRAMES (OG META) ========== */
+/* ============== FRAMES META (HOME) ============== */
 app.get('/frame/home', (req, res) => {
-  const fid   = String(req.query.fid || '12345');
-  const img   = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`;
-  const txUrl = `${PUBLIC_BASE_URL}/frame/tx?fid=${encodeURIComponent(fid)}`;
-  const next  = `${PUBLIC_BASE_URL}/frame/home?fid=${encodeURIComponent(fid)}`;
+  const fid = String(req.query.fid || '12345');
+  const img = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`;
+  const txUrl   = `${PUBLIC_BASE_URL}/frame/tx?fid=${encodeURIComponent(fid)}`;
+  const nextUrl = `${PUBLIC_BASE_URL}/frame/home?fid=${encodeURIComponent(fid)}`;
 
   const html = `<!doctype html><html><head>
     <meta property="og:title" content="WarpCat Preview"/>
-    <meta property="og:description" content="Mint your WarpCat on Base."/>
     <meta property="og:image" content="${img}"/>
-
     <meta name="fc:frame" content="vNext"/>
     <meta name="fc:frame:image" content="${img}"/>
     <meta name="fc:frame:button:1" content="Mint"/>
@@ -233,40 +231,45 @@ app.get('/frame/home', (req, res) => {
     <meta name="fc:frame:button:1:target" content="${txUrl}"/>
     <meta name="fc:frame:button:2" content="Refresh"/>
     <meta name="fc:frame:button:2:action" content="post"/>
-    <meta name="fc:frame:post_url" content="${next}"/>
+    <meta name="fc:frame:post_url" content="${nextUrl}"/>
   </head><body></body></html>`;
   res.type('html').send(html);
 });
 
-// Default Frames entry: route POST /frame → redirect to /frame/home
 app.post('/frame', (_req, res) => {
-  res.redirect(302, `/frame/home?fid=12345`);
+  // Default entry for Frames clients
+  const fid = '12345';
+  res.redirect(302, `/frame/home?fid=${fid}`);
 });
 
-/* ========== TX ENDPOINTS ========== */
-app.post('/frame/tx', (req, res) => {
+/* ============== FRAMES TX (WITH ELIGIBILITY) ============== */
+app.post('/frame/tx', async (req, res) => {
   const fid =
     (req.query && (req.query.fid || req.query.id)) ||
     (req.body  && (req.body.fid  || req.body.id)) ||
     '0';
 
-  if (!CONTRACT_ADDRESS) return res.status(500).json({ error: 'CONTRACT_ADDRESS missing' });
+  if (!CONTRACT_ADDRESS) {
+    return res.status(500).json({ error: 'CONTRACT_ADDRESS missing' });
+  }
 
-  const data = buildMintData(fid);
-  const tx = {
-    chainId: CHAIN_ID,
-    method: 'eth_sendTransaction',
-    params: {
-      to:    CONTRACT_ADDRESS,
-      data,
-      value: toHex(MINT_PRICE_WEI),
-    },
-  };
-  res.json(tx);
-});
+  // Eligibility check
+  const ok = await isEligible(fid);
+  if (!ok) {
+    const notOkImg = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`; // you can swap with a "Not eligible" banner
+    const retryUrl = `${PUBLIC_BASE_URL}/frame/home?fid=${encodeURIComponent(fid)}`;
+    const html = `<!doctype html><html><head>
+      <meta property="og:title" content="Not eligible"/>
+      <meta property="og:image" content="${notOkImg}"/>
+      <meta name="fc:frame" content="vNext"/>
+      <meta name="fc:frame:image" content="${notOkImg}"/>
+      <meta name="fc:frame:button:1" content="Back"/>
+      <meta name="fc:frame:button:1:action" content="post"/>
+      <meta name="fc:frame:post_url" content="${retryUrl}"/>
+    </head><body></body></html>`;
+    return res.type('html').send(html);
+  }
 
-app.get('/frame/tx', (req, res) => {
-  const fid = String(req.query.fid || '0');
   const data = buildMintData(fid);
   const tx = {
     chainId: CHAIN_ID,
@@ -276,7 +279,21 @@ app.get('/frame/tx', (req, res) => {
   res.json(tx);
 });
 
-/* ========== OPTIONAL: minted marker ========== */
+// also allow GET to test in browser
+app.get('/frame/tx', async (req, res) => {
+  const fid = String(req.query.fid || '0');
+  const ok  = await isEligible(fid);
+  if (!ok) return res.status(403).json({ eligible: false });
+  const data = buildMintData(fid);
+  const tx = {
+    chainId: CHAIN_ID,
+    method: 'eth_sendTransaction',
+    params: { to: CONTRACT_ADDRESS, data, value: toHex(MINT_PRICE_WEI) },
+  };
+  res.json(tx);
+});
+
+/* ============== OPTIONAL: MARK AS MINTED ============== */
 app.post('/frame/minted', (req, res) => {
   const fid = String((req.body && (req.body.fid || req.body.userFid)) || '0');
   const db = readMinted();
@@ -285,10 +302,10 @@ app.post('/frame/minted', (req, res) => {
   res.json({ ok: true });
 });
 
-/* ========== ROOT ========== */
+/* ============== ROOT ============== */
 app.get('/', (_req, res) => res.redirect(302, '/frame'));
 
-/* ========== START ========== */
+/* ============== START ============== */
 app.listen(PORT, () => {
   console.log(`WarpCat backend listening at ${PUBLIC_BASE_URL}/frame`);
 });

@@ -1,4 +1,11 @@
-// index.js — WarpCat Frames backend (v2, English-only)
+// index.js — WarpCat Frames backend (final, English-only)
+// Features:
+// - Frames flow: /frame -> /frame/preview (POST) -> /frame/mint
+// - Human-friendly browser preview: GET /frame/preview?fid=12345
+// - Deterministic compositor from traits tables (traits/*.json + assets/*/*.svg)
+// - Safe fallbacks if an asset is missing (no white screen)
+// - One-mint-per-FID memory (data/minted.json)
+// - Basic rate-limit for abuse protection
 import 'dotenv/config';
 import express from 'express';
 import fs from 'fs';
@@ -72,6 +79,7 @@ const TABLES = {
   expression: mustReadJSON(path.join(TRAITS_DIR, 'expression.json')) || []
 };
 
+// Apply simple rules if present
 function applyRules(sel) {
   const rules = RULES || {};
   for (const r of (rules.conflicts || [])) {
@@ -96,6 +104,7 @@ function applyRules(sel) {
       }
     }
   }
+  // Ensure non-null by falling back to the first available entry for any null slot
   for (const key of Object.keys(sel)) {
     if (!sel[key]) {
       const table = TABLES[key] || [];
@@ -116,20 +125,56 @@ function chooseTraits(fid) {
   return applyRules(sel);
 }
 
+// Compose SVG with safe fallbacks if asset files are missing
 function composeSVG(fid, selection) {
   const { width, height } = CONFIG.svgCanvas || { width: 1200, height: 1200 };
+
+  // Fallback map (must match actual files in assets/*/*.svg)
+  const FALLBACK = {
+    background: 'neon_purple',
+    aura: 'none',
+    body: 'feline',
+    eyes: 'sharp',
+    mouth: 'smirk',
+    headgear: 'cap',
+    accessory: 'none',
+    expression: 'chill'
+  };
+
   const layers = [];
   for (const type of CONFIG.order) {
     const choice = selection[type];
-    if (!choice || !choice.svgId) continue;
-    const filePath = path.join(ASSETS_DIR, type, `${choice.svgId}.svg`);
-    if (!fs.existsSync(filePath)) { console.warn(`Missing asset: ${type}/${choice.svgId}.svg`); continue; }
+    if (!choice) continue;
+
+    // Try the chosen svgId
+    let svgId = choice.svgId;
+    let filePath = path.join(ASSETS_DIR, type, `${svgId}.svg`);
+
+    // If missing, try fallback for that layer type
+    if (!fs.existsSync(filePath)) {
+      const fb = FALLBACK[type];
+      if (fb) {
+        console.warn(`Missing asset: ${type}/${svgId}.svg → fallback ${fb}.svg`);
+        svgId = fb;
+        filePath = path.join(ASSETS_DIR, type, `${svgId}.svg`);
+      }
+    }
+
+    // If still missing, skip that layer gracefully
+    if (!fs.existsSync(filePath)) {
+      console.warn(`Missing asset (no fallback available): ${type}/${choice.svgId}.svg`);
+      continue;
+    }
+
+    // Read and strip outer <svg> wrapper to nest safely
     let content = fs.readFileSync(filePath, 'utf8')
       .replace(/<\?xml[^>]*>\s*/gi, '')
       .replace(/<!DOCTYPE[^>]*>\s*/gi, '')
       .replace(/<\/?svg[^>]*>/gi, '');
-    layers.push(`<g id="${type}-${choice.id}">${content}</g>`);
+
+    layers.push(`<g id="${type}-${svgId}">${content}</g>`);
   }
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
   ${layers.join('\n')}
@@ -137,7 +182,7 @@ function composeSVG(fid, selection) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
-// Simple in-memory rate limit (best effort)
+// Simple in-memory rate limit
 const hits = new Map();
 function rateLimit(req, res, next) {
   const ip = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.socket.remoteAddress || 'ip';
@@ -151,7 +196,26 @@ function rateLimit(req, res, next) {
 // Routes
 app.get('/health', (_req, res) => res.json({ ok: true, base: PUBLIC_BASE_URL }));
 
-// Landing (for browser; Frames will mostly hit preview/mint endpoints)
+// Human-friendly browser preview (use this in a normal browser)
+app.get('/frame/preview', (req, res) => {
+  const fid = Number(req.query.fid || 12345);
+  const img = `${PUBLIC_BASE_URL}/img/preview/${fid}.svg`;
+  res.type('html').send(`
+    <!doctype html><html><head><meta charset="utf-8"><title>WarpCat Preview</title>
+    <style>body{font-family:Inter,Arial;margin:32px}input{padding:8px}button{padding:8px 12px;margin-left:8px}</style>
+    </head><body>
+      <h2>WarpCat — Browser Preview</h2>
+      <form action="/frame/preview" method="get">
+        <label>FID: <input name="fid" value="${fid}" /></label>
+        <button type="submit">Show</button>
+        <a href="/img/preview/${fid}.svg" target="_blank">Open SVG</a>
+      </form>
+      <div style="margin-top:20px"><img src="${img}" style="max-width:100%;height:auto;border:1px solid #eee"/></div>
+    </body></html>
+  `);
+});
+
+// Basic landing for Frames
 app.get('/frame', (_req, res) => {
   const html = `<!doctype html><html><head>
     <meta charset="utf-8"/>
@@ -161,7 +225,7 @@ app.get('/frame', (_req, res) => {
   </head>
   <body style="font-family:Inter,Arial; text-align:center; padding:40px;">
     <h1>WarpCat Frame</h1>
-    <p>Click Preview in your Farcaster client, or test below.</p>
+    <p>Open this in your Farcaster client or use <a href="/frame/preview?fid=12345" target="_blank">browser preview</a>.</p>
     <form action="/frame/preview" method="post" style="margin-top:24px;">
       <label>FID: <input name="untrustedData[fid]" value="12345"/></label>
       <button type="submit">Preview</button>
@@ -170,7 +234,7 @@ app.get('/frame', (_req, res) => {
   res.type('html').send(html);
 });
 
-// Frame: preview
+// Frame: preview (for Farcaster; returns meta tags only)
 app.post('/frame/preview', rateLimit, (req, res) => {
   const fid = Number(req.body?.['untrustedData[fid]'] ?? req.body?.fid ?? 0);
   const minted = loadMinted();
@@ -207,7 +271,7 @@ app.post('/frame/mint', rateLimit, (req, res) => {
   res.type('html').send(html);
 });
 
-// Frame: already minted state
+// Frame: already minted
 app.post('/frame/already', (_req, res) => {
   const html = `<!doctype html><html><head>
     <meta property="og:title" content="Already Minted"/>
@@ -219,7 +283,7 @@ app.post('/frame/already', (_req, res) => {
   res.type('html').send(html);
 });
 
-// Frame: view (links to preview image)
+// Frame: view screen (shows user’s composed image)
 app.post('/frame/view', (req, res) => {
   const fid = Number(req.body?.['untrustedData[fid]'] ?? req.body?.fid ?? 0);
   const img = `${PUBLIC_BASE_URL}/img/preview/${fid}.svg`;
@@ -233,14 +297,14 @@ app.post('/frame/view', (req, res) => {
   res.type('html').send(html);
 });
 
-// Dynamic composed SVG
+// Dynamic composed SVG (always returns an SVG even if some assets are missing)
 app.get('/img/preview/:fid.svg', (req, res) => {
   const fid = Number(req.params.fid || 0);
   const svg = composeSVG(fid, chooseTraits(fid));
   res.set('Content-Type', 'image/svg+xml').send(svg);
 });
 
-// Simple metadata (future on-chain use)
+// Simple metadata endpoint (future on-chain use)
 app.get('/metadata/:fid', (req, res) => {
   const fid = Number(req.params.fid || 0);
   const traits = chooseTraits(fid);
@@ -272,12 +336,16 @@ app.get('/dev', (_req, res) => {
   <body style="font-family: Arial; padding:20px;">
     <h2>WarpCat — Compositor Test</h2>
     <p><a href="/img/preview/12345.svg" target="_blank">/img/preview/12345.svg</a></p>
-    <form action="/frame/preview" method="post"><label>FID: <input name="untrustedData[fid]" value="12345"/></label>
-    <button type="submit">Preview</button></form>
+    <form action="/frame/preview" method="post">
+      <label>FID: <input name="untrustedData[fid]" value="12345"/></label>
+      <button type="submit">Preview</button>
+    </form>
+    <p style="margin-top:10px;"><a href="/frame/preview?fid=12345" target="_blank">Browser Preview</a></p>
   </body></html>`;
   res.type('html').send(html);
 });
 
+// Start
 app.listen(PORT, () => {
   console.log(`WarpCat backend listening at ${PUBLIC_BASE_URL}/frame`);
 });

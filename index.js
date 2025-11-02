@@ -171,37 +171,42 @@ app.get('/frame/card', (req, res) => {
 /* -------------------- FRAME META -------------------- */
 // Kısa ve paramsız path: /f/:fid  (cast’ta bunu kullan)
 function frameHead({ fid }) {
-  const image   = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`;
-  const txUrl   = `${PUBLIC_BASE_URL}/frame/tx?fid=${encodeURIComponent(fid)}`;
-  const postUrl = `${PUBLIC_BASE_URL}/f/${encodeURIComponent(fid)}`; // kısa, query yok
-  const fallbackOg = `${PUBLIC_BASE_URL}/static/og.png`;
+-  const image   = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`;
+-  const txUrl   = `${PUBLIC_BASE_URL}/frame/tx?fid=${encodeURIComponent(fid)}`;
+-  const postUrl = `${PUBLIC_BASE_URL}/f/${encodeURIComponent(fid)}`; // kısa, query yok
+-  const fallbackOg = `${PUBLIC_BASE_URL}/static/og.png`;
++  const image   = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`;
++  const txUrl   = `${PUBLIC_BASE_URL}/frame/tx?fid=${encodeURIComponent(fid)}`;
++  const postUrl = `${PUBLIC_BASE_URL}/f/${encodeURIComponent(fid)}`; // kısa, query yok
 
-  return `
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+   return `
+   <meta charset="utf-8"/>
+   <meta name="viewport" content="width=device-width, initial-scale=1"/>
 
-  <meta property="og:title" content="WarpCat Preview"/>
-  <meta property="og:type" content="website"/>
-  <meta property="og:url" content="${postUrl}"/>
-  <meta property="og:image" content="${fallbackOg}"/>
-  <meta property="og:image:width" content="1024"/>
-  <meta property="og:image:height" content="1024"/>
-  <meta name="twitter:card" content="summary_large_image"/>
-  <meta name="twitter:image" content="${fallbackOg}"/>
+   <meta property="og:title" content="WarpCat Preview"/>
+   <meta property="og:type" content="website"/>
+   <meta property="og:url" content="${postUrl}"/>
+-  <meta property="og:image" content="${fallbackOg}"/>
++  <meta property="og:image" content="${image}"/>
+   <meta property="og:image:width" content="1024"/>
+   <meta property="og:image:height" content="1024"/>
+   <meta name="twitter:card" content="summary_large_image"/>
+-  <meta name="twitter:image" content="${fallbackOg}"/>
++  <meta name="twitter:image" content="${image}"/>
 
-  <meta name="fc:frame" content="vNext"/>
-  <meta name="fc:frame:image" content="${image}"/>
-  <meta name="fc:frame:image:aspect_ratio" content="1:1"/>
+   <meta name="fc:frame" content="vNext"/>
+   <meta name="fc:frame:image" content="${image}"/>
+   <meta name="fc:frame:image:aspect_ratio" content="1:1"/>
 
-  <meta name="fc:frame:button:1" content="Mint"/>
-  <meta name="fc:frame:button:1:action" content="tx"/>
-  <meta name="fc:frame:button:1:target" content="${txUrl}"/>
+   <meta name="fc:frame:button:1" content="Mint"/>
+   <meta name="fc:frame:button:1:action" content="tx"/>
+   <meta name="fc:frame:button:1:target" content="${txUrl}"/>
 
-  <meta name="fc:frame:button:2" content="Refresh"/>
-  <meta name="fc:frame:button:2:action" content="post"/>
+   <meta name="fc:frame:button:2" content="Refresh"/>
+   <meta name="fc:frame:button:2:action" content="post"/>
 
-  <meta name="fc:frame:post_url" content="${postUrl}"/>
-`.trim();
+   <meta name="fc:frame:post_url" content="${postUrl}"/>
+ `.trim();
 }
 
 /* GET/POST — /f/:fid (kısa rota) */
@@ -313,3 +318,4 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+

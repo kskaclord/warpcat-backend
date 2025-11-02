@@ -21,7 +21,7 @@ app.use((req, _res, next) => {
   next();
 });
 
-/* Cache policy */
+/* Cache policy (frame/img/f) */
 app.use((req, res, next) => {
   if (req.path.startsWith('/frame') || req.path.startsWith('/img') || req.path.startsWith('/f')) {
     res.setHeader('Cache-Control', 'no-store, max-age=0');
@@ -29,29 +29,30 @@ app.use((req, res, next) => {
   next();
 });
 
-/* Serve static/ statics/ as /static */
+/* Serve static/ statics/ as /static  */
+function setHeaders(res, filePath) {
+  // Uzantıya göre type ver (PNG/JPG/WebP); og.png PNG olduğu için zaten doğru.
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.png') res.setHeader('Content-Type', 'image/png');
+  else if (ext === '.jpg' || ext === '.jpeg') res.setHeader('Content-Type', 'image/jpeg');
+  else if (ext === '.webp') res.setHeader('Content-Type', 'image/webp');
+  res.setHeader('Cache-Control', 'public, max-age=600');
+}
 const STATIC_A = path.join(__dirname, 'static');
 const STATIC_B = path.join(__dirname, 'statics'); // senin klasör
 if (fs.existsSync(STATIC_A)) app.use('/static', express.static(STATIC_A, { setHeaders }));
 if (fs.existsSync(STATIC_B)) app.use('/static', express.static(STATIC_B, { setHeaders }));
-function setHeaders(res, filePath) {
-  if (/\.(png|jpg|jpeg|gif|webp)$/i.test(filePath)) {
-    // og.png png; type'ı garanti edelim
-    res.setHeader('Content-Type', 'image/png');
-    res.setHeader('Cache-Control', 'public, max-age=600');
-  }
-}
 
 /* -------------------- Config -------------------- */
 const PORT = Number(process.env.PORT || 8080);
 const PUBLIC_BASE_URL =
   (process.env.PUBLIC_BASE_URL && process.env.PUBLIC_BASE_URL.replace(/\/$/, '')) ||
-  `https://localhost:${PORT}`;
+  `http://localhost:${PORT}`;
 
 const CHAIN_ID         = process.env.CHAIN_ID ? `eip155:${process.env.CHAIN_ID}` : 'eip155:8453';
 const CONTRACT_ADDRESS = (process.env.CONTRACT_ADDRESS || '').toLowerCase();
-const MINT_PRICE_WEI   = process.env.MINT_PRICE_WEI || '500000000000000';
-const MINT_SELECTOR    = (process.env.MINT_SELECTOR || '').toLowerCase();
+const MINT_PRICE_WEI   = process.env.MINT_PRICE_WEI || '500000000000000'; // 0.0005
+const MINT_SELECTOR    = (process.env.MINT_SELECTOR || '').toLowerCase(); // 0x40c10f19 gibi
 
 const NEYNAR_API_KEY   = process.env.NEYNAR_API_KEY || '';
 const NEYNAR_APP_ID    = process.env.NEYNAR_APP_ID || ''; // opsiyonel
@@ -60,6 +61,9 @@ const NEYNAR_APP_ID    = process.env.NEYNAR_APP_ID || ''; // opsiyonel
 const toHex = (n) => (typeof n === 'string' && n.startsWith('0x')) ? n : ('0x' + BigInt(n).toString(16));
 const uint256Hex = (n) => ('0x' + BigInt(n).toString(16).padStart(64, '0'));
 const buildMintData = (fid) => {
+  // selector boşsa parametresiz mint() kabul: data = "0x"
+  if (!MINT_SELECTOR) return '0x';
+  // 4-byte selector beklenir (0x + 8 hex = 10 uzunluk)
   if (!/^0x[0-9a-f]{8}$/i.test(MINT_SELECTOR)) return '0x';
   return (MINT_SELECTOR + uint256Hex(fid).slice(2)).toLowerCase();
 };
@@ -72,13 +76,12 @@ async function validateWithNeynar(payload) {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'api_key': NEYNAR_API_KEY,           // Neynar API expects api_key header
+        'api_key': NEYNAR_API_KEY,
       },
       body: JSON.stringify(payload),
     });
     if (!r.ok) return { ok: false, status: r.status };
     const json = await r.json();
-    // Beklenen alan isimleri ileride değişirse fail-soft
     if (json?.valid === true || json?.is_valid === true) return { ok: true, data: json };
     return { ok: false, data: json };
   } catch (e) {

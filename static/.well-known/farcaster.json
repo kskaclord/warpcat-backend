@@ -1,8 +1,8 @@
 {
   "accountAssociation": {
-    "header": "",
-    "payload": "",
-    "signature": ""
+    "header": "BURAYA_HEADER_YAPIŞTIR",
+    "payload": "BURAYA_PAYLOAD_YAPIŞTIR",
+    "signature": "BURAYA_SIGNATURE_YAPIŞTIR"
   },
   "miniapp": {
     "version": "1.0.0",
@@ -15,4 +15,3 @@
     "splashTextColor": "#ffffff"
   }
 }
-

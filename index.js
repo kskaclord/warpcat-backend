@@ -27,15 +27,17 @@ const STATIC_DIR = path.join(__dirname, 'static');
 if (fs.existsSync(STATIC_DIR)) {
   // Farcaster manifesti: dosyadan, doğru header ile (no-cache + application/json)
   app.get('/.well-known/farcaster.json', (req, res) => {
-    const p = path.join(STATIC_DIR, '.well-known', 'farcaster.json');
-    res.set({
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-cache, max-age=0',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-    });
-    res.sendFile(p);
+  const p = path.join(STATIC_DIR, '.well-known', 'farcaster.json');
+  res.set({
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-cache, max-age=0',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'Access-Control-Allow-Origin': '*',
+    'X-Content-Type-Options': 'nosniff',
   });
+  res.sendFile(p);
+});
 
   // /static/... (genel statikler)
   app.use('/static', express.static(STATIC_DIR, {
@@ -300,3 +302,4 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+

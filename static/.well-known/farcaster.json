@@ -5,7 +5,7 @@
     "signature": "OexyLeUjG/iWJemqCMOgFObd8i3xwUUpaogl8eKtAoBS/mMy/2n1ZTYFICWojInbzCSkaSLLUD1/zB3e5Qiwwhw="
   },
   "miniapp": {
-    "version": "1.0.0",
+    "version": "1.0",
     "name": "WarpCat",
     "description": "Mint your WarpCat NFT directly from Farcaster.",
     "iconUrl": "https://warpcat.xyz/static/og.png",

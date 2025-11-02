@@ -31,7 +31,6 @@ app.use((req, res, next) => {
 
 /* Serve static/ statics/ as /static  */
 function setHeaders(res, filePath) {
-  // Uzantıya göre type ver (PNG/JPG/WebP); og.png PNG olduğu için zaten doğru.
   const ext = path.extname(filePath).toLowerCase();
   if (ext === '.png') res.setHeader('Content-Type', 'image/png');
   else if (ext === '.jpg' || ext === '.jpeg') res.setHeader('Content-Type', 'image/jpeg');
@@ -39,7 +38,7 @@ function setHeaders(res, filePath) {
   res.setHeader('Cache-Control', 'public, max-age=600');
 }
 const STATIC_A = path.join(__dirname, 'static');
-const STATIC_B = path.join(__dirname, 'statics'); // senin klasör
+const STATIC_B = path.join(__dirname, 'statics');
 if (fs.existsSync(STATIC_A)) app.use('/static', express.static(STATIC_A, { setHeaders }));
 if (fs.existsSync(STATIC_B)) app.use('/static', express.static(STATIC_B, { setHeaders }));
 
@@ -61,9 +60,7 @@ const NEYNAR_APP_ID    = process.env.NEYNAR_APP_ID || ''; // opsiyonel
 const toHex = (n) => (typeof n === 'string' && n.startsWith('0x')) ? n : ('0x' + BigInt(n).toString(16));
 const uint256Hex = (n) => ('0x' + BigInt(n).toString(16).padStart(64, '0'));
 const buildMintData = (fid) => {
-  // selector boşsa parametresiz mint() kabul: data = "0x"
-  if (!MINT_SELECTOR) return '0x';
-  // 4-byte selector beklenir (0x + 8 hex = 10 uzunluk)
+  if (!MINT_SELECTOR) return '0x';                       // parametresiz mint()
   if (!/^0x[0-9a-f]{8}$/i.test(MINT_SELECTOR)) return '0x';
   return (MINT_SELECTOR + uint256Hex(fid).slice(2)).toLowerCase();
 };
@@ -171,42 +168,37 @@ app.get('/frame/card', (req, res) => {
 /* -------------------- FRAME META -------------------- */
 // Kısa ve paramsız path: /f/:fid  (cast’ta bunu kullan)
 function frameHead({ fid }) {
-  const image   = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`;
-  const txUrl   = `${PUBLIC_BASE_URL}/frame/tx?fid=${encodeURIComponent(fid)}`;
-  const postUrl = `${PUBLIC_BASE_URL}/f/${encodeURIComponent(fid)}`; // kısa, query yok
-  const fallbackOg = `${PUBLIC_BASE_URL}/static/og.png`;
-  const image   = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`;
-  const txUrl   = `${PUBLIC_BASE_URL}/frame/tx?fid=${encodeURIComponent(fid)}`;
-  const postUrl = `${PUBLIC_BASE_URL}/f/${encodeURIComponent(fid)}`; // kısa, query yok
+  const image     = `${PUBLIC_BASE_URL}/img/preview/${encodeURIComponent(fid)}.png`;
+  const txUrl     = `${PUBLIC_BASE_URL}/frame/tx?fid=${encodeURIComponent(fid)}`;
+  const postUrl   = `${PUBLIC_BASE_URL}/f/${encodeURIComponent(fid)}`;
+  const fallbackOg= `${PUBLIC_BASE_URL}/static/og.png`;
 
-   return `
-   <meta charset="utf-8"/>
-   <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  return `
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
 
-   <meta property="og:title" content="WarpCat Preview"/>
-   <meta property="og:type" content="website"/>
-   <meta property="og:url" content="${postUrl}"/>
+  <meta property="og:title" content="WarpCat Preview"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:url" content="${postUrl}"/>
   <meta property="og:image" content="${fallbackOg}"/>
-  <meta property="og:image" content="${image}"/>
-   <meta property="og:image:width" content="1024"/>
-   <meta property="og:image:height" content="1024"/>
-   <meta name="twitter:card" content="summary_large_image"/>
+  <meta property="og:image:width" content="1024"/>
+  <meta property="og:image:height" content="1024"/>
+  <meta name="twitter:card" content="summary_large_image"/>
   <meta name="twitter:image" content="${fallbackOg}"/>
-  <meta name="twitter:image" content="${image}"/>
 
-   <meta name="fc:frame" content="vNext"/>
-   <meta name="fc:frame:image" content="${image}"/>
-   <meta name="fc:frame:image:aspect_ratio" content="1:1"/>
+  <meta name="fc:frame" content="vNext"/>
+  <meta name="fc:frame:image" content="${image}"/>
+  <meta name="fc:frame:image:aspect_ratio" content="1:1"/>
 
-   <meta name="fc:frame:button:1" content="Mint"/>
-   <meta name="fc:frame:button:1:action" content="tx"/>
-   <meta name="fc:frame:button:1:target" content="${txUrl}"/>
+  <meta name="fc:frame:button:1" content="Mint"/>
+  <meta name="fc:frame:button:1:action" content="tx"/>
+  <meta name="fc:frame:button:1:target" content="${txUrl}"/>
 
-   <meta name="fc:frame:button:2" content="Refresh"/>
-   <meta name="fc:frame:button:2:action" content="post"/>
+  <meta name="fc:frame:button:2" content="Refresh"/>
+  <meta name="fc:frame:button:2:action" content="post"/>
 
-   <meta name="fc:frame:post_url" content="${postUrl}"/>
- `.trim();
+  <meta name="fc:frame:post_url" content="${postUrl}"/>
+`.trim();
 }
 
 /* GET/POST — /f/:fid (kısa rota) */
@@ -246,7 +238,6 @@ app.post('/frame', (req, res) => res.redirect(302, '/f/12345'));
 
 /* -------------------- TX endpoint (Neynar doğrulamalı) -------------------- */
 async function sendTx(req, res) {
-  // Neynar doğrulaması (GET olursa geç; POST olursa valide et)
   if (req.method === 'POST') {
     const validation = await validateWithNeynar(req.body || {});
     if (!validation.ok) {
@@ -318,5 +309,3 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
-
-

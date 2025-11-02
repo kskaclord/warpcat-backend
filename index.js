@@ -32,7 +32,7 @@ app.use((req, res, next) => {
   // Mini App dokümanları bunu öneriyor
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
   next();
-
+}); // ✅ EKSİK OLAN KAPANIŞ
 
 /* Log */
 app.use((req, _res, next) => {
@@ -362,10 +362,3 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
-
-
-
-
-
-
-

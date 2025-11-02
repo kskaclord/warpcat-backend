@@ -210,9 +210,10 @@ app.get('/metadata/:fid.json', async (req, res) => {
 
 /* -------------------- MINI APP FRAME -------------------- */
 function renderMiniFrame({ fid }) {
-  const image   = `${PUBLIC_BASE_URL}/static/og.png`;
-  const txUrl   = `${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(fid)}`;
-  const postUrl = `${PUBLIC_BASE_URL}/mini/frame?fid=${encodeURIComponent(fid)}`;
+  const image    = `${PUBLIC_BASE_URL}/static/og.png`;
+  const txUrl    = `${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(fid)}`;
+  const postUrl  = `${PUBLIC_BASE_URL}/mini/frame?fid=${encodeURIComponent(fid)}`;
+  const ogUrl    = `${PUBLIC_BASE_URL}/mini/frame`; // 👈 parametresiz
 
   return `<!doctype html><html><head>
   <meta charset="utf-8"/>
@@ -221,7 +222,7 @@ function renderMiniFrame({ fid }) {
 
   <meta property="og:title" content="WarpCat Mint"/>
   <meta property="og:type" content="website"/>
-  <meta property="og:url" content="${postUrl}"/>
+  <meta property="og:url" content="${ogUrl}"/>                        <!-- parametresiz -->
   <meta property="og:image" content="${image}"/>
   <meta property="og:image:width" content="1024"/>
   <meta property="og:image:height" content="1024"/>
@@ -239,10 +240,10 @@ function renderMiniFrame({ fid }) {
   <meta name="fc:frame:button:2" content="Refresh"/>
   <meta name="fc:frame:button:2:action" content="post"/>
 
-  <meta name="fc:frame:post_url" content="${postUrl}"/>
+  <meta name="fc:frame:post_url" content="${postUrl}"/>               <!-- fid’li -->
   <title>WarpCat Mini</title>
   <style>
-    html,body{margin:0;padding:0;background:#000;height:100%;color:#fff;font-family:system-ui, -apple-system, Segoe UI, Roboto}
+    html,body{margin:0;padding:0;background:#000;height:100%;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto}
     .wrap{min-height:100%;display:grid;place-items:center}
     .card{text-align:center;opacity:.9}
     .card img{width:160px;height:160px;border-radius:24px}
@@ -263,9 +264,7 @@ function renderMiniFrame({ fid }) {
   <!-- Mini App SDK: splash’i kapatmak için ready() -->
   <script type="module">
     import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk';
-    const onReady = async () => {
-      try { await sdk.actions.ready(); } catch(e) { /* ignore double-call */ }
-    };
+    const onReady = async () => { try { await sdk.actions.ready(); } catch(_) {} };
     if (document.readyState === 'complete') onReady();
     else window.addEventListener('load', onReady);
   </script>
@@ -363,6 +362,7 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 
 

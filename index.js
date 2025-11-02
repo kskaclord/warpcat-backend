@@ -198,20 +198,16 @@ app.get('/metadata/:fid.json', async (req, res) => {
 
 /* -------------------- MINI APP FRAME -------------------- */
 /** Tek frame: 1:1 görsel + “Mint” (= tx) + “Refresh” (= post) */
-/** Tek frame: 1:1 görsel + “Mint” (= tx) + “Refresh” (= post) — Farcaster Mini SDK ile */
 function renderMiniFrame({ fid }) {
   const image   = `${PUBLIC_BASE_URL}/static/og.png`;
   const txUrl   = `${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(fid)}`;
   const postUrl = `${PUBLIC_BASE_URL}/mini/frame?fid=${encodeURIComponent(fid)}`;
 
-  return `<!doctype html>
-<html lang="en">
-<head>
+  return `<!doctype html><html><head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="fc:frame" content="vNext"/>
 
-  <!-- OpenGraph/Twitter (preview) -->
   <meta property="og:title" content="WarpCat Mint"/>
   <meta property="og:type" content="website"/>
   <meta property="og:url" content="${postUrl}"/>
@@ -221,11 +217,9 @@ function renderMiniFrame({ fid }) {
   <meta name="twitter:card" content="summary_large_image"/>
   <meta name="twitter:image" content="${image}"/>
 
-  <!-- Frames v2 görsel -->
   <meta name="fc:frame:image" content="${image}"/>
   <meta name="fc:frame:image:aspect_ratio" content="1:1"/>
 
-  <!-- Butonlar -->
   <meta name="fc:frame:button:1" content="Mint"/>
   <meta name="fc:frame:button:1:action" content="tx"/>
   <meta name="fc:frame:button:1:target" content="${txUrl}"/>
@@ -233,42 +227,38 @@ function renderMiniFrame({ fid }) {
   <meta name="fc:frame:button:2" content="Refresh"/>
   <meta name="fc:frame:button:2:action" content="post"/>
 
-  <!-- Post URL -->
   <meta name="fc:frame:post_url" content="${postUrl}"/>
 
   <title>WarpCat Mini</title>
-
-  <!-- Farcaster Mini SDK -->
-  <script src="https://farcasterxyz.github.io/mini-frames/sdk/v1.js"></script>
-  <script>
-    // Splash ekranını kapatmak için app hazır sinyali
-    // (iframe olarak yüklendiğinde 'Developer Mode: Ready not called' uyarısını kaldırır)
-    const ready = () => {
-      try {
-        if (window.farcaster && window.farcaster.actions && window.farcaster.actions.ready) {
-          window.farcaster.actions.ready();
-          console.log("WarpCat MiniApp ready ✅");
-        } else {
-          console.warn("Farcaster SDK not available yet ⚠️");
+  </head>
+  <body style="margin:0;padding:0;background:#000">
+    <!-- Ready sinyali: Warpcast SDK varsa onu çağır; yoksa postMessage fallback -->
+    <script>
+      (function() {
+        function sendReady() {
+          try {
+            if (window.warpcast && window.warpcast.actions && typeof window.warpcast.actions.ready === 'function') {
+              window.warpcast.actions.ready();
+              return;
+            }
+          } catch (e) {}
+          try {
+            if (window.parent) {
+              window.parent.postMessage({ type: 'warpcast:ready' }, '*');
+            }
+          } catch (e) {}
         }
-      } catch (e) {
-        console.warn("ready() error:", e);
-      }
-    };
-    // Hem DOMContentLoaded hem de onload ile güvence
-    document.addEventListener('DOMContentLoaded', ready);
-    window.addEventListener('load', ready);
-  </script>
-
-  <!-- İsteğe bağlı ufak güvenli cache ayarı (preview hızlı gelsin) -->
-  <meta http-equiv="Cache-Control" content="no-store, max-age=0"/>
-</head>
-<body style="margin:0;padding:0;background:#000;">
-  <!-- Görseli ayrıca body’ye de koyuyoruz; bazı istemciler og:image göstermeyebilir -->
-  <img src="${image}" alt="WarpCat" style="display:block;width:100%;max-width:1024px;margin:0 auto;height:auto;"/>
-</body>
-</html>`;
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+          sendReady();
+        } else {
+          document.addEventListener('DOMContentLoaded', sendReady, { once: true });
+        }
+      })();
+    </script>
+  </body>
+  </html>`;
 }
+
 
 /* GET/POST — Mini frame endpoint */
 async function handleMiniFrame(req, res) {
@@ -352,5 +342,6 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 

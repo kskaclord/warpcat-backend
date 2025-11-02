@@ -44,11 +44,10 @@ app.use((req, _res, next) => {
 });
 
 /* -------------------- Static -------------------- */
-/* -------------------- Static -------------------- */
 const STATIC_DIR = path.join(__dirname, 'static');
 
+// 1) /static servis et
 if (fs.existsSync(STATIC_DIR)) {
-  // /static/... (genel statikler)
   app.use('/static', express.static(STATIC_DIR, {
     setHeaders(res, filePath) {
       const ext = path.extname(filePath).toLowerCase();
@@ -59,46 +58,46 @@ if (fs.existsSync(STATIC_DIR)) {
       res.setHeader('Cache-Control', 'public, max-age=600');
     }
   }));
+}
 
-  // farcaster.json — dinamik döndürüyoruz (no-cache)
-  app.get('/.well-known/farcaster.json', (_req, res) => {
-    res.set({
-      'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-    });
-
-    res.send(JSON.stringify({
-      accountAssociation: {
-        header: "eyJmaWQiOjQ3MzM2NiwidHlwZSI6ImF1dGgiLCJrZXkiOiIweDIwNDQyMDNCZGFiZTE0ZTQwNUEyQTY4MTE2MjFkZTI0Njg4RTZlNjkifQ",
-        payload: "eyJkb21haW4iOiJ3YXJwY2F0Lnh5eiJ9",
-        signature: "OexyLeUjG/iWJemqCMOgFObd8i3xwUUpaogl8eKtAoBS/mMy/2n1ZTYFICWojInbzCSkaSLLUD1/zB3e5Qiwwhw="
-      },
-      miniapp: {
-        version: "1",
-        name: "WarpCat",
-        description: "Mint your WarpCat NFT directly from Farcaster.",
-        iconUrl: "https://warpcat.xyz/static/og.png",
-        homeUrl: "https://warpcat.xyz/mini/frame",
-        splashImageUrl: "https://warpcat.xyz/static/og.png",
-        splashBackgroundColor: "#000000",
-        splashTextColor: "#ffffff"
-      }
-    }));
+// 2) /.well-known/farcaster.json — DİNAMİK (her zaman var)
+app.get('/.well-known/farcaster.json', (_req, res) => {
+  res.set({
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
   });
 
-  // /.well-known altındaki diğer dosyalar (opsiyonel)
-  const WELL_KNOWN_DIR = path.join(STATIC_DIR, '.well-known');
-  if (fs.existsSync(WELL_KNOWN_DIR)) {
-    app.use('/.well-known', express.static(WELL_KNOWN_DIR, {
-      setHeaders(res) {
-        res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        res.setHeader('Cache-Control', 'public, max-age=300');
-      }
-    }));
-  }
-} // <== STATIC_DIR if’i burada biter
+  res.send(JSON.stringify({
+    accountAssociation: {
+      header: "eyJmaWQiOjQ3MzM2NiwidHlwZSI6ImF1dGgiLCJrZXkiOiIweDIwNDQyMDNCZGFiZTE0ZTQwNUEyQTY4MTE2MjFkZTI0Njg4RTZlNjkifQ",
+      payload: "eyJkb21haW4iOiJ3YXJwY2F0Lnh5eiJ9",
+      signature: "OexyLeUjG/iWJemqCMOgFObd8i3xwUUpaogl8eKtAoBS/mMy/2n1ZTYFICWojInbzCSkaSLLUD1/zB3e5Qiwwhw="
+    },
+    miniapp: {
+      version: "1",
+      name: "WarpCat",
+      description: "Mint your WarpCat NFT directly from Farcaster.",
+      iconUrl: "https://warpcat.xyz/static/og.png",
+      homeUrl: "https://warpcat.xyz/mini/frame",
+      splashImageUrl: "https://warpcat.xyz/static/og.png",
+      splashBackgroundColor: "#000000",
+      splashTextColor: "#ffffff"
+    }
+  }));
+});
+
+// 3) /.well-known klasörünü (varsa) statik ver (opsiyonel)
+const WELL_KNOWN_DIR = path.join(STATIC_DIR, '.well-known');
+if (fs.existsSync(WELL_KNOWN_DIR)) {
+  app.use('/.well-known', express.static(WELL_KNOWN_DIR, {
+    setHeaders(res) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=300');
+    }
+  }));
+}
 
 /* -------------------- Config -------------------- */
 const PORT = Number(process.env.PORT || 8080);
@@ -365,6 +364,7 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 
 

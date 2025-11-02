@@ -1,24 +1,39 @@
 // scripts/gen-assoc.js
 import fetch from "node-fetch";
 
-const API_KEY = process.env.NEYNAR_APP_KEY; // App Wallet sayfandaki API Key'i .env'ye koy
-const DOMAIN  = "warpcat.xyz";
+const API_KEY  = process.env.NEYNAR_APP_KEY;    // .env'ye ekle
+const WALLET_ID = process.env.NEYNAR_WALLET_ID; // .env'ye ekle
+const DOMAIN   = "warpcat.xyz";                 // takılırsa "https://warpcat.xyz" deneyebilirsin
+
+const url = "https://api.neynar.com/v2/app/create-account-association";
 
 (async () => {
-  const r = await fetch("https://api.neynar.com/v2/app/create-account-association", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "api_key": API_KEY,
-    },
-    body: JSON.stringify({ domain: DOMAIN }),
-  });
+  const tryOnce = async (domainStr) => {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "api_key": API_KEY,
+      },
+      body: JSON.stringify({ domain: domainStr, wallet_id: WALLET_ID }),
+    });
+    const text = await r.text();
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${text}`);
+    return JSON.parse(text);
+  };
 
-  if (!r.ok) {
-    console.error("Failed:", r.status, await r.text());
+  try {
+    let json;
+    try {
+      json = await tryOnce(DOMAIN);
+    } catch (e) {
+      console.warn("First try failed, retrying with https:// prefix...");
+      json = await tryOnce(`https://${DOMAIN.replace(/^https?:\/\//, "")}`);
+    }
+    console.log("\n=== accountAssociation ===");
+    console.log(JSON.stringify(json, null, 2));
+  } catch (err) {
+    console.error("Failed:", err.message);
     process.exit(1);
   }
-  const json = await r.json();
-  console.log("\n=== accountAssociation ===");
-  console.log(JSON.stringify(json, null, 2));
 })();

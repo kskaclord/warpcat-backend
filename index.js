@@ -25,15 +25,12 @@ app.use((req, _res, next) => {
 const STATIC_DIR = path.join(__dirname, 'static');
 
 if (fs.existsSync(STATIC_DIR)) {
-  // FARCASTER MANIFEST — explicit route (hiçbir şey eksiltmedim, sadece header ekledim)
+  // /.well-known/farcaster.json (manifest + association)
   app.get('/.well-known/farcaster.json', (req, res) => {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
-    // Eklenenler:
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
 
     res.json({
       "accountAssociation": {
@@ -66,7 +63,7 @@ if (fs.existsSync(STATIC_DIR)) {
     }
   }));
 
-  // /.well-known/... (kökten yayınla; farcaster.json dosyası varsa bu da çalışır)
+  // /.well-known (statik kullanmak istersen)
   const WELL_KNOWN_DIR = path.join(STATIC_DIR, '.well-known');
   if (fs.existsSync(WELL_KNOWN_DIR)) {
     app.use('/.well-known', express.static(WELL_KNOWN_DIR, {
@@ -102,7 +99,7 @@ function buildMintData(fidStr) {
   if (!MINT_SELECTOR) return '0x';
   // 4-byte selector doğrulama
   if (!/^0x[0-9a-f]{8}$/i.test(MINT_SELECTOR)) return '0x';
-  // Eğer kontratın mint(uint256 fid) ise; fid’i encode et
+  // mint(uint256 fid) ise FID encode et
   try {
     const fid = BigInt(fidStr || '0');
     return (MINT_SELECTOR + uint256Hex(fid).slice(2)).toLowerCase();
@@ -232,7 +229,7 @@ function renderMiniFrame({ fid }) {
   <title>WarpCat Mini</title>
   </head>
   <body style="margin:0;padding:0;background:#000">
-    <!-- Ready sinyali: Warpcast SDK varsa onu çağır; yoksa postMessage fallback -->
+    <!-- Warpcast'a 'hazırım' sinyali: SDK varsa ready(); yoksa postMessage fallback -->
     <script>
       (function() {
         function sendReady() {
@@ -258,7 +255,6 @@ function renderMiniFrame({ fid }) {
   </body>
   </html>`;
 }
-
 
 /* GET/POST — Mini frame endpoint */
 async function handleMiniFrame(req, res) {
@@ -305,7 +301,6 @@ app.get('/mini/tx', handleTx);
 app.post('/mini/tx', handleTx);
 
 /* -------------------- Neynar Mini App Notifications Webhook -------------------- */
-/** İmza doğrulamalı webhook (NEYNAR_WEBHOOK_SECRET varsa doğrular, yoksa dev modda kabul eder) */
 app.post('/neynar/webhook', (req, res) => {
   try {
     const bodyStr   = JSON.stringify(req.body || {});
@@ -342,6 +337,3 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
-
-
-

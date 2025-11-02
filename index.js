@@ -31,6 +31,25 @@ if (fs.existsSync(STATIC_DIR)) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
+
+  res.json({
+    "accountAssociation": {
+      "header": "eyJmaWQiOjQ3MzM2NiwidHlwZSI6ImF1dGgiLCJrZXkiOiIweDIwNDQyMDNCZGFiZTE0ZTQwNUEyQTY4MTE2MjFkZTI0Njg4RTZlNjkifQ",
+      "payload": "eyJkb21haW4iOiJ3YXJwY2F0Lnh5eiJ9",
+      "signature": "OexyLeUjG/iWJemqCMOgFObd8i3xwUUpaogl8eKtAoBS/mMy/2n1ZTYFICWojInbzCSkaSLLUD1/zB3e5Qiwwhw="
+    },
+    "miniapp": {
+      "version": "1.0.0",
+      "name": "WarpCat",
+      "description": "Mint your WarpCat NFT directly from Farcaster.",
+      "iconUrl": "https://warpcat.xyz/static/og.png",
+      "homeUrl": "https://warpcat.xyz/mini/frame",
+      "splashImageUrl": "https://warpcat.xyz/static/og.png",
+      "splashBackgroundColor": "#000000",
+      "splashTextColor": "#ffffff"
+    }
+  });
+});
   app.use('/static', express.static(STATIC_DIR, {
     setHeaders(res, filePath) {
       const ext = path.extname(filePath).toLowerCase();
@@ -290,4 +309,5 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 

@@ -13,26 +13,6 @@ const app = express();
 app.set('trust proxy', true);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-// ---- Allow Warpcast to embed this page
-app.use((req, res, next) => {
-  // Bazı platformlar otomatik basabiliyor, önce temizleyelim
-  res.removeHeader('X-Frame-Options');
-  res.removeHeader('Content-Security-Policy');
-
-  // İzinli çerçeve ataları: Warpcast/Farcaster + self
-  res.setHeader(
-    'Content-Security-Policy',
-    "frame-ancestors 'self' https://*.warpcast.com https://*.farcaster.xyz"
-  );
-
-  // Bazı proxy’ler XFO arıyor; boş geçmek yerine hiç koymamak daha iyi ama
-  // olur da eklenirse etkisizleşsin diye boş set edelim
-  res.setHeader('X-Frame-Options', '');
-
-  // Mini App dokümanları bunu öneriyor
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
-  next();
-}); // ✅ EKSİK OLAN KAPANIŞ
 
 /* Log */
 app.use((req, _res, next) => {
@@ -44,7 +24,7 @@ app.use((req, _res, next) => {
 /* -------------------- Static -------------------- */
 const STATIC_DIR = path.join(__dirname, 'static');
 
-// 1) /static servis et
+// /static – genel statikler
 if (fs.existsSync(STATIC_DIR)) {
   app.use('/static', express.static(STATIC_DIR, {
     setHeaders(res, filePath) {
@@ -58,7 +38,7 @@ if (fs.existsSync(STATIC_DIR)) {
   }));
 }
 
-// 2) /.well-known/farcaster.json — DİNAMİK (her zaman var)
+/* /.well-known/farcaster.json – DİNAMİK (her zaman var) */
 app.get('/.well-known/farcaster.json', (_req, res) => {
   res.set({
     'Content-Type': 'application/json; charset=utf-8',
@@ -67,6 +47,7 @@ app.get('/.well-known/farcaster.json', (_req, res) => {
     'Expires': '0',
   });
 
+  // Neynar’ın verdiği 3 alan + Mini App manifest
   res.send(JSON.stringify({
     accountAssociation: {
       header: "eyJmaWQiOjQ3MzM2NiwidHlwZSI6ImF1dGgiLCJrZXkiOiIweDIwNDQyMDNCZGFiZTE0ZTQwNUEyQTY4MTE2MjFkZTI0Njg4RTZlNjkifQ",
@@ -74,7 +55,7 @@ app.get('/.well-known/farcaster.json', (_req, res) => {
       signature: "OexyLeUjG/iWJemqCMOgFObd8i3xwUUpaogl8eKtAoBS/mMy/2n1ZTYFICWojInbzCSkaSLLUD1/zB3e5Qiwwhw="
     },
     miniapp: {
-      version: "1",
+      version: "1",                               // Farcaster Mini Apps spec → 1
       name: "WarpCat",
       description: "Mint your WarpCat NFT directly from Farcaster.",
       iconUrl: "https://warpcat.xyz/static/og.png",
@@ -86,7 +67,7 @@ app.get('/.well-known/farcaster.json', (_req, res) => {
   }));
 });
 
-// 3) /.well-known klasörünü (varsa) statik ver (opsiyonel)
+// /.well-known klasörünü (varsa) statik ver (opsiyonel)
 const WELL_KNOWN_DIR = path.join(STATIC_DIR, '.well-known');
 if (fs.existsSync(WELL_KNOWN_DIR)) {
   app.use('/.well-known', express.static(WELL_KNOWN_DIR, {
@@ -117,13 +98,16 @@ const toHex = (n) => (typeof n === 'string' && n.startsWith('0x')) ? n : ('0x' +
 const uint256Hex = (n) => ('0x' + BigInt(n).toString(16).padStart(64, '0'));
 
 function buildMintData(fidStr) {
+  // selector yoksa parametresiz mint()
   if (!MINT_SELECTOR) return '0x';
+  // 4-byte selector doğrulama
   if (!/^0x[0-9a-f]{8}$/i.test(MINT_SELECTOR)) return '0x';
+  // Eğer kontratın mint(uint256 fid) ise; fid’i encode et
   try {
     const fid = BigInt(fidStr || '0');
     return (MINT_SELECTOR + uint256Hex(fid).slice(2)).toLowerCase();
   } catch {
-    return MINT_SELECTOR;
+    return MINT_SELECTOR; // fail-soft
   }
 }
 
@@ -146,7 +130,11 @@ async function validateWithNeynar(payload) {
   }
 }
 
-/* -------------------- DYNAMIC METADATA -------------------- */
+/* -------------------- DYNAMIC METADATA (OpenSea-compatible) -------------------- */
+/**
+ * GET /metadata/:fid.json
+ * Farcaster profilinden pfp & kullanıcı bilgisi çekerek anlık metadata üretir.
+ */
 app.get('/metadata/:fid.json', async (req, res) => {
   const fid = String(req.params.fid || '0');
 
@@ -165,9 +153,9 @@ app.get('/metadata/:fid.json', async (req, res) => {
     if (r.ok) {
       const j = await r.json();
       const u = j?.result?.user;
-      if (u?.username)     username   = u.username;
+      if (u?.username)     username    = u.username;
       if (u?.displayName)  displayName = u.displayName;
-      if (u?.pfp?.url)     pfp        = u.pfp.url;
+      if (u?.pfp?.url)     pfp         = u.pfp.url;
     }
 
     const metadata = {
@@ -210,10 +198,9 @@ app.get('/metadata/:fid.json', async (req, res) => {
 
 /* -------------------- MINI APP FRAME -------------------- */
 function renderMiniFrame({ fid }) {
-  const image    = `${PUBLIC_BASE_URL}/static/og.png`;
-  const txUrl    = `${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(fid)}`;
-  const postUrl  = `${PUBLIC_BASE_URL}/mini/frame?fid=${encodeURIComponent(fid)}`;
-  const ogUrl    = `${PUBLIC_BASE_URL}/mini/frame`; // 👈 parametresiz
+  const image   = `${PUBLIC_BASE_URL}/static/og.png`;
+  const txUrl   = `${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(fid)}`;
+  const postUrl = `${PUBLIC_BASE_URL}/mini/frame?fid=${encodeURIComponent(fid)}`;
 
   return `<!doctype html><html><head>
   <meta charset="utf-8"/>
@@ -222,7 +209,7 @@ function renderMiniFrame({ fid }) {
 
   <meta property="og:title" content="WarpCat Mint"/>
   <meta property="og:type" content="website"/>
-  <meta property="og:url" content="${ogUrl}"/>                        <!-- parametresiz -->
+  <meta property="og:url" content="${postUrl}"/>
   <meta property="og:image" content="${image}"/>
   <meta property="og:image:width" content="1024"/>
   <meta property="og:image:height" content="1024"/>
@@ -240,10 +227,10 @@ function renderMiniFrame({ fid }) {
   <meta name="fc:frame:button:2" content="Refresh"/>
   <meta name="fc:frame:button:2:action" content="post"/>
 
-  <meta name="fc:frame:post_url" content="${postUrl}"/>               <!-- fid’li -->
+  <meta name="fc:frame:post_url" content="${postUrl}"/>
   <title>WarpCat Mini</title>
   <style>
-    html,body{margin:0;padding:0;background:#000;height:100%;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto}
+    html,body{margin:0;padding:0;background:#000;height:100%;color:#fff;font-family:system-ui, -apple-system, Segoe UI, Roboto}
     .wrap{min-height:100%;display:grid;place-items:center}
     .card{text-align:center;opacity:.9}
     .card img{width:160px;height:160px;border-radius:24px}
@@ -264,7 +251,9 @@ function renderMiniFrame({ fid }) {
   <!-- Mini App SDK: splash’i kapatmak için ready() -->
   <script type="module">
     import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk';
-    const onReady = async () => { try { await sdk.actions.ready(); } catch(_) {} };
+    const onReady = async () => {
+      try { await sdk.actions.ready(); } catch(e) { /* ignore double-call */ }
+    };
     if (document.readyState === 'complete') onReady();
     else window.addEventListener('load', onReady);
   </script>
@@ -281,22 +270,12 @@ async function handleMiniFrame(req, res) {
   }
 
   const html = renderMiniFrame({ fid });
-
-  res
-    .status(200)
-    .set({
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'no-store, max-age=0',
-      // Güvenlik başlıkları yukarıdaki global middleware’den zaten geliyor,
-      // ama proxy/cache bypass için burada da boş geçiyoruz:
-      'X-Frame-Options': '',
-      'Content-Security-Policy': "frame-ancestors 'self' https://*.warpcast.com https://*.farcaster.xyz",
-    })
-    .send(html);
+  res.status(200)
+     .set({'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store, max-age=0'})
+     .send(html);
 }
 app.get('/mini/frame', handleMiniFrame);
 app.post('/mini/frame', handleMiniFrame);
-
 
 /* -------------------- TX (Frames v2) -------------------- */
 async function handleTx(req, res) {
@@ -311,7 +290,7 @@ async function handleTx(req, res) {
 
   const fid = String(req.query.fid || req.body?.fid || '0');
   const tx = {
-    chainId: CHAIN_ID,
+    chainId: CHAIN_ID,                 // e.g., eip155:8453
     method: 'eth_sendTransaction',
     params: {
       to: CONTRACT_ADDRESS,
@@ -325,7 +304,7 @@ async function handleTx(req, res) {
 app.get('/mini/tx', handleTx);
 app.post('/mini/tx', handleTx);
 
-/* -------------------- Neynar Webhook -------------------- */
+/* -------------------- Neynar Mini App Notifications Webhook -------------------- */
 app.post('/neynar/webhook', (req, res) => {
   try {
     const bodyStr   = JSON.stringify(req.body || {});

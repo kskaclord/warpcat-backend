@@ -25,7 +25,7 @@ app.use((req, _res, next) => {
 const STATIC_DIR = path.join(__dirname, 'static');
 
 if (fs.existsSync(STATIC_DIR)) {
-  // /.well-known/farcaster.json (manifest + association)
+  // /.well-known/farcaster.json — manifest
   app.get('/.well-known/farcaster.json', (req, res) => {
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -33,25 +33,25 @@ if (fs.existsSync(STATIC_DIR)) {
     res.setHeader('Expires', '0');
 
     res.json({
-      "accountAssociation": {
-        "header": "eyJmaWQiOjQ3MzM2NiwidHlwZSI6ImF1dGgiLCJrZXkiOiIweDIwNDQyMDNCZGFiZTE0ZTQwNUEyQTY4MTE2MjFkZTI0Njg4RTZlNjkifQ",
-        "payload": "eyJkb21haW4iOiJ3YXJwY2F0Lnh5eiJ9",
-        "signature": "OexyLeUjG/iWJemqCMOgFObd8i3xwUUpaogl8eKtAoBS/mMy/2n1ZTYFICWojInbzCSkaSLLUD1/zB3e5Qiwwhw="
+      accountAssociation: {
+        header:   "eyJmaWQiOjQ3MzM2NiwidHlwZSI6ImF1dGgiLCJrZXkiOiIweDIwNDQyMDNCZGFiZTE0ZTQwNUEyQTY4MTE2MjFkZTI0Njg4RTZlNjkifQ",
+        payload:  "eyJkb21haW4iOiJ3YXJwY2F0Lnh5eiJ9",
+        signature:"OexyLeUjG/iWJemqCMOgFObd8i3xwUUpaogl8eKtAoBS/mMy/2n1ZTYFICWojInbzCSkaSLLUD1/zB3e5Qiwwhw="
       },
-      "miniapp": {
-        "version": "1",
-        "name": "WarpCat",
-        "description": "Mint your WarpCat NFT directly from Farcaster.",
-        "iconUrl": "https://warpcat.xyz/static/og.png",
-        "homeUrl": "https://warpcat.xyz/mini/frame",
-        "splashImageUrl": "https://warpcat.xyz/static/og.png",
-        "splashBackgroundColor": "#000000",
-        "splashTextColor": "#ffffff"
+      miniapp: {
+        version: "1", // <— Farcaster “1” istiyor; valid
+        name: "WarpCat",
+        description: "Mint your WarpCat NFT directly from Farcaster.",
+        iconUrl: "https://warpcat.xyz/static/og.png",
+        homeUrl: "https://warpcat.xyz/mini/frame",
+        splashImageUrl: "https://warpcat.xyz/static/og.png",
+        splashBackgroundColor: "#000000",
+        splashTextColor: "#ffffff"
       }
     });
   });
 
-  // /static/... (genel statikler)
+  // /static — genel statikler
   app.use('/static', express.static(STATIC_DIR, {
     setHeaders(res, filePath) {
       const ext = path.extname(filePath).toLowerCase();
@@ -63,7 +63,7 @@ if (fs.existsSync(STATIC_DIR)) {
     }
   }));
 
-  // /.well-known (statik kullanmak istersen)
+  // /.well-known (statik klasör varsa)
   const WELL_KNOWN_DIR = path.join(STATIC_DIR, '.well-known');
   if (fs.existsSync(WELL_KNOWN_DIR)) {
     app.use('/.well-known', express.static(WELL_KNOWN_DIR, {
@@ -95,16 +95,13 @@ const toHex = (n) => (typeof n === 'string' && n.startsWith('0x')) ? n : ('0x' +
 const uint256Hex = (n) => ('0x' + BigInt(n).toString(16).padStart(64, '0'));
 
 function buildMintData(fidStr) {
-  // selector yoksa parametresiz mint()
   if (!MINT_SELECTOR) return '0x';
-  // 4-byte selector doğrulama
   if (!/^0x[0-9a-f]{8}$/i.test(MINT_SELECTOR)) return '0x';
-  // mint(uint256 fid) ise FID encode et
   try {
     const fid = BigInt(fidStr || '0');
     return (MINT_SELECTOR + uint256Hex(fid).slice(2)).toLowerCase();
   } catch {
-    return MINT_SELECTOR; // fail-soft
+    return MINT_SELECTOR;
   }
 }
 
@@ -127,11 +124,7 @@ async function validateWithNeynar(payload) {
   }
 }
 
-/* -------------------- DYNAMIC METADATA (OpenSea-compatible) -------------------- */
-/**
- * GET /metadata/:fid.json
- * Farcaster profilinden pfp & kullanıcı bilgisi çekerek anlık metadata üretir.
- */
+/* -------------------- DYNAMIC METADATA -------------------- */
 app.get('/metadata/:fid.json', async (req, res) => {
   const fid = String(req.params.fid || '0');
 
@@ -194,7 +187,6 @@ app.get('/metadata/:fid.json', async (req, res) => {
 });
 
 /* -------------------- MINI APP FRAME -------------------- */
-/** Tek frame: 1:1 görsel + “Mint” (= tx) + “Refresh” (= post) */
 function renderMiniFrame({ fid }) {
   const image   = `${PUBLIC_BASE_URL}/static/og.png`;
   const txUrl   = `${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(fid)}`;
@@ -225,43 +217,28 @@ function renderMiniFrame({ fid }) {
   <meta name="fc:frame:button:2:action" content="post"/>
 
   <meta name="fc:frame:post_url" content="${postUrl}"/>
-
   <title>WarpCat Mini</title>
-  </head>
-  <body style="margin:0;padding:0;background:#000">
-    <!-- Warpcast'a 'hazırım' sinyali: SDK varsa ready(); yoksa postMessage fallback -->
-    <script>
-      (function() {
-        function sendReady() {
-          try {
-            if (window.warpcast && window.warpcast.actions && typeof window.warpcast.actions.ready === 'function') {
-              window.warpcast.actions.ready();
-              return;
-            }
-          } catch (e) {}
-          try {
-            if (window.parent) {
-              window.parent.postMessage({ type: 'warpcast:ready' }, '*');
-            }
-          } catch (e) {}
-        }
-        if (document.readyState === 'complete' || document.readyState === 'interactive') {
-          sendReady();
-        } else {
-          document.addEventListener('DOMContentLoaded', sendReady, { once: true });
-        }
-      })();
-    </script>
-  </body>
-  </html>`;
-}
+</head>
+<body></body>
 
+<!-- 🔽🔽🔽 Mini App SDK: splash'ı kapatmak için ready() 🔽🔽🔽 -->
 <script type="module">
   import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk';
-  const onReady = async () => { try { await sdk.actions.ready(); } catch(e){ console.warn(e); } };
+
+  // Bazı client'larda görsel yüklenmesini beklemek iyi olur
+  const onReady = async () => {
+    try {
+      await sdk.actions.ready(); // <-- ZORUNLU (doküman)
+    } catch (e) {
+      // ready() ikinci kez çağrılırsa vs. patlamasın
+      console.warn('sdk.actions.ready() warn:', e?.message || e);
+    }
+  };
+
   if (document.readyState === 'complete') onReady();
   else window.addEventListener('load', onReady);
-</script>;
+</script>
+</html>`;
 }
 
 /* GET/POST — Mini frame endpoint */
@@ -294,7 +271,7 @@ async function handleTx(req, res) {
 
   const fid = String(req.query.fid || req.body?.fid || '0');
   const tx = {
-    chainId: CHAIN_ID,                 // e.g., eip155:8453
+    chainId: CHAIN_ID,
     method: 'eth_sendTransaction',
     params: {
       to: CONTRACT_ADDRESS,
@@ -308,7 +285,7 @@ async function handleTx(req, res) {
 app.get('/mini/tx', handleTx);
 app.post('/mini/tx', handleTx);
 
-/* -------------------- Neynar Mini App Notifications Webhook -------------------- */
+/* -------------------- Neynar Webhook -------------------- */
 app.post('/neynar/webhook', (req, res) => {
   try {
     const bodyStr   = JSON.stringify(req.body || {});
@@ -345,4 +322,3 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
-

@@ -1,17 +1,16 @@
 {
   "accountAssociation": {
-    "header": "eyJmaWQiOjQ3MzM2NiwidHlwZSI6ImF1dGgiLCJrZXkiOiIweDIwNDQyMDNCZGFiZTE0ZTQwNUEyQTY4MTE2MjFkZTI0Njg4RTZlNjkifQ",
-    "payload": "eyJkb21haW4iOiJ3YXJwY2F0Lnh5eiJ9",
-    "signature": "OexyLeUjG/iWJemqCMOgFObd8i3xwUUpaogl8eKtAoBS/mMy/2n1ZTYFICWojInbzCSkaSLLUD1/zB3e5Qiwwhw="
-  }
-}
+    "header": "eyJmaWQiOjQ3MzM2NiwidWlwZSI6ImFidGljLjRzXkioiIweD1wNDQyMDNCZGFjZTQ2TQwNUEyQTY4MTE2MjFkZTl0Njg4RTZiNjkifQ",
+    "payload": "eyJkb21haW4iOiJ3YXJwY2F0Lnh5eiIsInRpbWUiOjE3MzQ2MDI2Njh9",
+    "signature": "0xeyLeuJG/iWJemqCM0gF0bd8i3xwU0upq18eKtAoB5/mWy/2nIz1YFICWojJnbzCSka5LUUD1/zB3eSQiwwhw="
+  },
   "miniapp": {
     "version": "1.0.0",
     "name": "WarpCat",
     "description": "Mint your WarpCat NFT directly from Farcaster.",
-    "iconUrl": "https://api.warpcat.xyz/static/og.png",
-    "homeUrl": "https://api.warpcat.xyz/mini/frame",
-    "splashImageUrl": "https://api.warpcat.xyz/static/og.png",
+    "iconUrl": "https://warpcat.xyz/static/og.png",
+    "homeUrl": "https://warpcat.xyz/mini/frame",
+    "splashImageUrl": "https://warpcat.xyz/static/og.png",
     "splashBackgroundColor": "#000000",
     "splashTextColor": "#ffffff"
   }

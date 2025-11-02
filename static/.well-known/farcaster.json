@@ -1,16 +1,16 @@
 {
   "accountAssociation": {
-    "header": "TERMINALDE_GELEN_HEADER",
-    "payload": "TERMINALDE_GELEN_PAYLOAD",
-    "signature": "TERMINALDE_GELEN_SIGNATURE"
+    "header": "",
+    "payload": "",
+    "signature": ""
   },
   "miniapp": {
     "version": "1.0.0",
     "name": "WarpCat",
     "description": "Mint your WarpCat NFT directly from Farcaster.",
-    "iconUrl": "https://warpcat.xyz/static/og.png",
-    "homeUrl": "https://warpcat.xyz/mini/frame",
-    "splashImageUrl": "https://warpcat.xyz/static/og.png",
+    "iconUrl": "https://api.warpcat.xyz/static/og.png",
+    "homeUrl": "https://api.warpcat.xyz/mini/frame",
+    "splashImageUrl": "https://api.warpcat.xyz/static/og.png",
     "splashBackgroundColor": "#000000",
     "splashTextColor": "#ffffff"
   }

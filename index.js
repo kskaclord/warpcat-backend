@@ -3,6 +3,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 
 /* -------------------- Paths & App -------------------- */
 const __filename = fileURLToPath(import.meta.url);
@@ -20,18 +21,32 @@ app.use((req, _res, next) => {
   next();
 });
 
-/* Static */
+/* -------------------- Static -------------------- */
 const STATIC_DIR = path.join(__dirname, 'static');
+
 if (fs.existsSync(STATIC_DIR)) {
+  // /static/... (genel statikler)
   app.use('/static', express.static(STATIC_DIR, {
     setHeaders(res, filePath) {
       const ext = path.extname(filePath).toLowerCase();
-      if (ext === '.png') res.setHeader('Content-Type', 'image/png');
+      if (ext === '.png')  res.setHeader('Content-Type', 'image/png');
       if (ext === '.jpg' || ext === '.jpeg') res.setHeader('Content-Type', 'image/jpeg');
       if (ext === '.webp') res.setHeader('Content-Type', 'image/webp');
+      if (ext === '.svg')  res.setHeader('Content-Type', 'image/svg+xml');
       res.setHeader('Cache-Control', 'public, max-age=600');
     }
   }));
+
+  // /.well-known/... (kökten yayınla; farcaster.json için)
+  const WELL_KNOWN_DIR = path.join(STATIC_DIR, '.well-known');
+  if (fs.existsSync(WELL_KNOWN_DIR)) {
+    app.use('/.well-known', express.static(WELL_KNOWN_DIR, {
+      setHeaders(res) {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Cache-Control', 'public, max-age=300');
+      }
+    }));
+  }
 }
 
 /* -------------------- Config -------------------- */
@@ -43,12 +58,16 @@ const PUBLIC_BASE_URL =
 const CHAIN_ID         = process.env.CHAIN_ID ? `eip155:${process.env.CHAIN_ID}` : 'eip155:8453';
 const CONTRACT_ADDRESS = (process.env.CONTRACT_ADDRESS || '').toLowerCase();
 const MINT_PRICE_WEI   = process.env.MINT_PRICE_WEI || '0';
-const MINT_SELECTOR    = (process.env.MINT_SELECTOR || '').toLowerCase(); // 4-byte (0x........) veya boş
+const MINT_SELECTOR    = (process.env.MINT_SELECTOR || '').toLowerCase(); // 0x........ (4 byte) veya boş
 const NEYNAR_API_KEY   = process.env.NEYNAR_API_KEY || '';
+
+const NEYNAR_WEBHOOK_SECRET = process.env.NEYNAR_WEBHOOK_SECRET || ''; // opsiyonel
+const NEYNAR_WEBHOOK_ID     = process.env.NEYNAR_WEBHOOK_ID || '';     // opsiyonel
 
 /* -------------------- Helpers -------------------- */
 const toHex = (n) => (typeof n === 'string' && n.startsWith('0x')) ? n : ('0x' + BigInt(n).toString(16));
 const uint256Hex = (n) => ('0x' + BigInt(n).toString(16).padStart(64, '0'));
+
 function buildMintData(fidStr) {
   // selector yoksa parametresiz mint()
   if (!MINT_SELECTOR) return '0x';
@@ -83,14 +102,13 @@ async function validateWithNeynar(payload) {
 }
 
 /* -------------------- DYNAMIC METADATA (OpenSea-compatible) -------------------- */
-/** 
+/**
  * GET /metadata/:fid.json
  * Farcaster profilinden pfp & kullanıcı bilgisi çekerek anlık metadata üretir.
  */
 app.get('/metadata/:fid.json', async (req, res) => {
   const fid = String(req.params.fid || '0');
 
-  // fallback görseli: static/default.png varsa onu, yoksa og.png’yi kullan
   const fallbackImage =
     fs.existsSync(path.join(STATIC_DIR, 'default.png'))
       ? `${PUBLIC_BASE_URL}/static/default.png`
@@ -106,15 +124,15 @@ app.get('/metadata/:fid.json', async (req, res) => {
     if (r.ok) {
       const j = await r.json();
       const u = j?.result?.user;
-      if (u?.username) username = u.username;
-      if (u?.displayName) displayName = u.displayName;
-      if (u?.pfp?.url) pfp = u.pfp.url;
+      if (u?.username)     username   = u.username;
+      if (u?.displayName)  displayName = u.displayName;
+      if (u?.pfp?.url)     pfp        = u.pfp.url;
     }
 
     const metadata = {
       name: `WarpCat #${fid}`,
       description: `WarpCat NFT linked to Farcaster user @${username}`,
-      image: pfp, // OpenSea "image" alanı
+      image: pfp,
       external_url: `https://warpcast.com/${username}`,
       attributes: [
         { trait_type: 'FID', value: fid },
@@ -132,7 +150,6 @@ app.get('/metadata/:fid.json', async (req, res) => {
       .send(JSON.stringify(metadata, null, 2));
   } catch (err) {
     console.error('metadata error', err);
-    // Tamamen çökerse basit fallback JSON döndür
     const metadata = {
       name: `WarpCat #${fid}`,
       description: `WarpCat NFT`,
@@ -153,7 +170,7 @@ app.get('/metadata/:fid.json', async (req, res) => {
 /* -------------------- MINI APP FRAME -------------------- */
 /** Tek frame: 1:1 görsel + “Mint” (= tx) + “Refresh” (= post) */
 function renderMiniFrame({ fid }) {
-  const image   = `${PUBLIC_BASE_URL}/static/og.png`;  // sabit görsel; Mini App içi için yeterli
+  const image   = `${PUBLIC_BASE_URL}/static/og.png`;
   const txUrl   = `${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(fid)}`;
   const postUrl = `${PUBLIC_BASE_URL}/mini/frame?fid=${encodeURIComponent(fid)}`;
 
@@ -162,7 +179,6 @@ function renderMiniFrame({ fid }) {
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="fc:frame" content="vNext"/>
 
-  <!-- Hem frame hem kart aynı görseli kullansın -->
   <meta property="og:title" content="WarpCat Mint"/>
   <meta property="og:type" content="website"/>
   <meta property="og:url" content="${postUrl}"/>
@@ -187,7 +203,7 @@ function renderMiniFrame({ fid }) {
 </head><body></body></html>`;
 }
 
-/* GET/POST — Mini frame endpoint (Neynar UI Components → Frame URL burası) */
+/* GET/POST — Mini frame endpoint */
 async function handleMiniFrame(req, res) {
   const fid = String(req.query.fid || req.body?.fid || '0');
 
@@ -232,19 +248,40 @@ app.get('/mini/tx', handleTx);
 app.post('/mini/tx', handleTx);
 
 /* -------------------- Neynar Mini App Notifications Webhook -------------------- */
+/** İmza doğrulamalı webhook (NEYNAR_WEBHOOK_SECRET varsa doğrular, yoksa dev modda kabul eder) */
 app.post('/neynar/webhook', (req, res) => {
-  // Buraya “Broadcast”, “Agent” vs. event’ler düşer. Şimdilik loglayıp 200 dönüyoruz.
   try {
-    console.log('[NEYNAR WEBHOOK]', JSON.stringify(req.body).slice(0, 2000));
-  } catch {}
-  res.status(200).json({ ok: true });
+    const bodyStr   = JSON.stringify(req.body || {});
+    const signature = req.headers['x-neynar-signature'];
+
+    if (NEYNAR_WEBHOOK_SECRET) {
+      const expected = crypto
+        .createHmac('sha256', NEYNAR_WEBHOOK_SECRET)
+        .update(bodyStr)
+        .digest('hex');
+
+      if (signature !== expected) {
+        console.warn('[NEYNAR WEBHOOK] ❌ invalid signature');
+        return res.status(401).json({ ok: false, error: 'invalid_signature' });
+        }
+    } else {
+      console.warn('[NEYNAR WEBHOOK] warning: no secret set, accepting without verification');
+    }
+
+    const type = req.body?.type || 'unknown';
+    console.log('[NEYNAR WEBHOOK] ✅', type, bodyStr.slice(0, 1500));
+    return res.status(200).json({ ok: true });
+  } catch (e) {
+    console.error('[NEYNAR WEBHOOK] error', e);
+    return res.status(200).json({ ok: true }); // fail-soft
+  }
 });
 
-/* Health & root */
+/* -------------------- Health & root -------------------- */
 app.get('/', (_req, res) => res.redirect(302, '/mini/frame?fid=12345'));
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
-/* Start */
+/* -------------------- Start -------------------- */
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });

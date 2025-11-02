@@ -13,20 +13,27 @@ const app = express();
 app.set('trust proxy', true);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-// ---- Allow embedding in Warpcast (remove frame-blocking headers)
+// ---- Allow Warpcast to embed this page
 app.use((req, res, next) => {
-  // Bazı platformlar bunları otomatik basıyor; embed'i kırıyor.
+  // Bazı platformlar otomatik basabiliyor, önce temizleyelim
   res.removeHeader('X-Frame-Options');
   res.removeHeader('Content-Security-Policy');
 
-  // Emin olmak için boş değer geçelim (bazı proxy'ler remove'u ignore edebiliyor)
+  // İzinli çerçeve ataları: Warpcast/Farcaster + self
+  res.setHeader(
+    'Content-Security-Policy',
+    "frame-ancestors 'self' https://*.warpcast.com https://*.farcaster.xyz"
+  );
+
+  // Bazı proxy’ler XFO arıyor; boş geçmek yerine hiç koymamak daha iyi ama
+  // olur da eklenirse etkisizleşsin diye boş set edelim
   res.setHeader('X-Frame-Options', '');
-  res.setHeader('Content-Security-Policy', '');
 
-  // Mini App dokümanları "same-origin-allow-popups" öneriyor
+  // Mini App dokümanları bunu öneriyor
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
-
   next();
+});
+
 });
 
 /* Log */
@@ -280,11 +287,11 @@ async function handleMiniFrame(req, res) {
     .status(200)
     .set({
       'Content-Type': 'text/html; charset=utf-8',
-      // embed/preview’de cache yüzünden takılmasın
       'Cache-Control': 'no-store, max-age=0',
-      // güvene almak için bu ikisini de boş geçiyoruz (proxy’ler inat ederse)
+      // Güvenlik başlıkları yukarıdaki global middleware’den zaten geliyor,
+      // ama proxy/cache bypass için burada da boş geçiyoruz:
       'X-Frame-Options': '',
-      'Content-Security-Policy': '',
+      'Content-Security-Policy': "frame-ancestors 'self' https://*.warpcast.com https://*.farcaster.xyz",
     })
     .send(html);
 }
@@ -356,5 +363,6 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 

@@ -8,7 +8,7 @@
   "splashBackgroundColor": "#000000",
   "splashTextColor": "#ffffff",
 
-  "buttonTitle": "Mint Now",                       // ← karttaki “Open” bugün bunu alıyor
+  "buttonTitle": "Mint Now",                       
   "ogTitle": "Mint your WarpCat",
   "ogDescription": "1 FID = 1 WarpCat • PFP → NFT on Base",
   "ogImageUrl": "https://warpcat.xyz/static/og.png",

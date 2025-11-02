@@ -13,6 +13,21 @@ const app = express();
 app.set('trust proxy', true);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+// ---- Allow embedding in Warpcast (remove frame-blocking headers)
+app.use((req, res, next) => {
+  // Bazı platformlar bunları otomatik basıyor; embed'i kırıyor.
+  res.removeHeader('X-Frame-Options');
+  res.removeHeader('Content-Security-Policy');
+
+  // Emin olmak için boş değer geçelim (bazı proxy'ler remove'u ignore edebiliyor)
+  res.setHeader('X-Frame-Options', '');
+  res.setHeader('Content-Security-Policy', '');
+
+  // Mini App dokümanları "same-origin-allow-popups" öneriyor
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+
+  next();
+});
 
 /* Log */
 app.use((req, _res, next) => {
@@ -260,12 +275,22 @@ async function handleMiniFrame(req, res) {
   }
 
   const html = renderMiniFrame({ fid });
-  res.status(200)
-     .set({'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store, max-age=0'})
-     .send(html);
+
+  res
+    .status(200)
+    .set({
+      'Content-Type': 'text/html; charset=utf-8',
+      // embed/preview’de cache yüzünden takılmasın
+      'Cache-Control': 'no-store, max-age=0',
+      // güvene almak için bu ikisini de boş geçiyoruz (proxy’ler inat ederse)
+      'X-Frame-Options': '',
+      'Content-Security-Policy': '',
+    })
+    .send(html);
 }
 app.get('/mini/frame', handleMiniFrame);
 app.post('/mini/frame', handleMiniFrame);
+
 
 /* -------------------- TX (Frames v2) -------------------- */
 async function handleTx(req, res) {
@@ -331,4 +356,5 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 

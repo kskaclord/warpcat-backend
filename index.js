@@ -42,7 +42,7 @@ if (fs.existsSync(STATIC_DIR)) {
         "signature": "OexyLeUjG/iWJemqCMOgFObd8i3xwUUpaogl8eKtAoBS/mMy/2n1ZTYFICWojInbzCSkaSLLUD1/zB3e5Qiwwhw="
       },
       "miniapp": {
-        "version": "1.0.0",
+        "version": "1",
         "name": "WarpCat",
         "description": "Mint your WarpCat NFT directly from Farcaster.",
         "iconUrl": "https://warpcat.xyz/static/og.png",
@@ -314,3 +314,4 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+

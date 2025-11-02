@@ -256,6 +256,14 @@ function renderMiniFrame({ fid }) {
   </html>`;
 }
 
+<script type="module">
+  import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk';
+  const onReady = async () => { try { await sdk.actions.ready(); } catch(e){ console.warn(e); } };
+  if (document.readyState === 'complete') onReady();
+  else window.addEventListener('load', onReady);
+</script>;
+}
+
 /* GET/POST — Mini frame endpoint */
 async function handleMiniFrame(req, res) {
   const fid = String(req.query.fid || req.body?.fid || '0');
@@ -337,3 +345,4 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+

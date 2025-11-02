@@ -1,17 +1,16 @@
-{{
-  "accountAssociation": {
-    "header": "eyJmaWQiOjQ3MzM2NiwidHlwZSI6ImF1dGgiLCJrZXkiOiIweDIwNDQyMDNCZGFiZTE0ZTQwNUEyQTY4MTE2MjFkZTI0Njg4RTZlNjkifQ",
-    "payload": "eyJkb21haW4iOiJ3YXJwY2F0Lnh5eiJ9",
-    "signature": "OexyLeUjG/iWJemqCMOgFObd8i3xwUUpaogl8eKtAoBS/mMy/2n1ZTYFICWojInbzCSkaSLLUD1/zB3e5Qiwwhw="
-  },
-  "miniapp": {
-    "version": "1",
-    "name": "WarpCat",
-    "description": "Mint your WarpCat NFT directly from Farcaster.",
-    "iconUrl": "https://warpcat.xyz/static/og.png",
-    "homeUrl": "https://warpcat.xyz/mini/frame",
-    "splashImageUrl": "https://warpcat.xyz/static/og.png",
-    "splashBackgroundColor": "#000000",
-    "splashTextColor": "#ffffff"
-  }
+"miniapp": {
+  "version": "1",
+  "name": "WarpCat",
+  "description": "Mint your WarpCat NFT directly from Farcaster.",
+  "iconUrl": "https://warpcat.xyz/static/og.png",
+  "homeUrl": "https://warpcat.xyz/mini/frame",
+  "imageUrl": "https://warpcat.xyz/static/og.png",
+  "buttonTitle": "Mint Now",
+  "splashImageUrl": "https://warpcat.xyz/static/og.png",
+  "splashBackgroundColor": "#000000",
+  "splashTextColor": "#ffffff",
+  "ogTitle": "Mint Your Own WarpCat",
+  "ogDescription": "1 FID = 1 WarpCat. Tap to mint on Base.",
+  "ogImageUrl": "https://warpcat.xyz/static/og.png",
+  "castShareUrl": "https://warpcat.xyz/mini/frame"
 }

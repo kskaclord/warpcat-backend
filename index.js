@@ -82,6 +82,74 @@ async function validateWithNeynar(payload) {
   }
 }
 
+/* -------------------- DYNAMIC METADATA (OpenSea-compatible) -------------------- */
+/** 
+ * GET /metadata/:fid.json
+ * Farcaster profilinden pfp & kullanıcı bilgisi çekerek anlık metadata üretir.
+ */
+app.get('/metadata/:fid.json', async (req, res) => {
+  const fid = String(req.params.fid || '0');
+
+  // fallback görseli: static/default.png varsa onu, yoksa og.png’yi kullan
+  const fallbackImage =
+    fs.existsSync(path.join(STATIC_DIR, 'default.png'))
+      ? `${PUBLIC_BASE_URL}/static/default.png`
+      : `${PUBLIC_BASE_URL}/static/og.png`;
+
+  try {
+    const url = `https://client.warpcast.com/v2/user-by-fid?fid=${encodeURIComponent(fid)}`;
+    const r = await fetch(url, { headers: { 'accept': 'application/json' } });
+    let username = `user-${fid}`;
+    let displayName = `WarpCat #${fid}`;
+    let pfp = fallbackImage;
+
+    if (r.ok) {
+      const j = await r.json();
+      const u = j?.result?.user;
+      if (u?.username) username = u.username;
+      if (u?.displayName) displayName = u.displayName;
+      if (u?.pfp?.url) pfp = u.pfp.url;
+    }
+
+    const metadata = {
+      name: `WarpCat #${fid}`,
+      description: `WarpCat NFT linked to Farcaster user @${username}`,
+      image: pfp, // OpenSea "image" alanı
+      external_url: `https://warpcast.com/${username}`,
+      attributes: [
+        { trait_type: 'FID', value: fid },
+        { trait_type: 'Username', value: username },
+        { trait_type: 'Collection', value: 'WarpCat' },
+      ],
+    };
+
+    res
+      .status(200)
+      .set({
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'public, max-age=60',
+      })
+      .send(JSON.stringify(metadata, null, 2));
+  } catch (err) {
+    console.error('metadata error', err);
+    // Tamamen çökerse basit fallback JSON döndür
+    const metadata = {
+      name: `WarpCat #${fid}`,
+      description: `WarpCat NFT`,
+      image: fallbackImage,
+      external_url: `${PUBLIC_BASE_URL}`,
+      attributes: [{ trait_type: 'FID', value: fid }],
+    };
+    res
+      .status(200)
+      .set({
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'public, max-age=60',
+      })
+      .send(JSON.stringify(metadata, null, 2));
+  }
+});
+
 /* -------------------- MINI APP FRAME -------------------- */
 /** Tek frame: 1:1 görsel + “Mint” (= tx) + “Refresh” (= post) */
 function renderMiniFrame({ fid }) {

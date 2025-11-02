@@ -1,8 +1,8 @@
 {
   "accountAssociation": {
-    "header": "BURAYA_HEADER_YAPIŞTIR",
-    "payload": "BURAYA_PAYLOAD_YAPIŞTIR",
-    "signature": "BURAYA_SIGNATURE_YAPIŞTIR"
+    "header": "TERMINALDE_GELEN_HEADER",
+    "payload": "TERMINALDE_GELEN_PAYLOAD",
+    "signature": "TERMINALDE_GELEN_SIGNATURE"
   },
   "miniapp": {
     "version": "1.0.0",

@@ -26,6 +26,11 @@ const STATIC_DIR = path.join(__dirname, 'static');
 
 if (fs.existsSync(STATIC_DIR)) {
   // /static/... (genel statikler)
+  app.get('/.well-known/farcaster.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   app.use('/static', express.static(STATIC_DIR, {
     setHeaders(res, filePath) {
       const ext = path.extname(filePath).toLowerCase();
@@ -285,3 +290,4 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+

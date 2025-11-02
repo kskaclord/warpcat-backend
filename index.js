@@ -25,19 +25,34 @@ app.use((req, _res, next) => {
 const STATIC_DIR = path.join(__dirname, 'static');
 
 if (fs.existsSync(STATIC_DIR)) {
-  // Farcaster manifesti: dosyadan, doğru header ile (no-cache + application/json)
+  // FARCASTER MANIFEST — explicit route (hiçbir şey eksiltmedim, sadece header ekledim)
   app.get('/.well-known/farcaster.json', (req, res) => {
-  const p = path.join(STATIC_DIR, '.well-known', 'farcaster.json');
-  res.set({
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-cache, max-age=0',
-    'Pragma': 'no-cache',
-    'Expires': '0',
-    'Access-Control-Allow-Origin': '*',
-    'X-Content-Type-Options': 'nosniff',
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    // Eklenenler:
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    res.json({
+      "accountAssociation": {
+        "header": "eyJmaWQiOjQ3MzM2NiwidHlwZSI6ImF1dGgiLCJrZXkiOiIweDIwNDQyMDNCZGFiZTE0ZTQwNUEyQTY4MTE2MjFkZTI0Njg4RTZlNjkifQ",
+        "payload": "eyJkb21haW4iOiJ3YXJwY2F0Lnh5eiJ9",
+        "signature": "OexyLeUjG/iWJemqCMOgFObd8i3xwUUpaogl8eKtAoBS/mMy/2n1ZTYFICWojInbzCSkaSLLUD1/zB3e5Qiwwhw="
+      },
+      "miniapp": {
+        "version": "1.0.0",
+        "name": "WarpCat",
+        "description": "Mint your WarpCat NFT directly from Farcaster.",
+        "iconUrl": "https://warpcat.xyz/static/og.png",
+        "homeUrl": "https://warpcat.xyz/mini/frame",
+        "splashImageUrl": "https://warpcat.xyz/static/og.png",
+        "splashBackgroundColor": "#000000",
+        "splashTextColor": "#ffffff"
+      }
+    });
   });
-  res.sendFile(p);
-});
 
   // /static/... (genel statikler)
   app.use('/static', express.static(STATIC_DIR, {
@@ -51,16 +66,12 @@ if (fs.existsSync(STATIC_DIR)) {
     }
   }));
 
-  // /.well-known altında başka dosyalar varsa (txt vs.) servis et
+  // /.well-known/... (kökten yayınla; farcaster.json dosyası varsa bu da çalışır)
   const WELL_KNOWN_DIR = path.join(STATIC_DIR, '.well-known');
   if (fs.existsSync(WELL_KNOWN_DIR)) {
     app.use('/.well-known', express.static(WELL_KNOWN_DIR, {
-      setHeaders(res, filePath) {
-        // farcaster.json özel route ile zaten no-cache; geri kalanı hafif cache’lenebilir.
-        const ext = path.extname(filePath).toLowerCase();
-        if (ext === '.json') {
-          res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        }
+      setHeaders(res) {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.setHeader('Cache-Control', 'public, max-age=300');
       }
     }));
@@ -266,6 +277,7 @@ app.get('/mini/tx', handleTx);
 app.post('/mini/tx', handleTx);
 
 /* -------------------- Neynar Mini App Notifications Webhook -------------------- */
+/** İmza doğrulamalı webhook (NEYNAR_WEBHOOK_SECRET varsa doğrular, yoksa dev modda kabul eder) */
 app.post('/neynar/webhook', (req, res) => {
   try {
     const bodyStr   = JSON.stringify(req.body || {});
@@ -302,4 +314,3 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
-

@@ -1,3 +1,9 @@
+{
+  "accountAssociation": {
+    "header": "eyJmaWQiOjQ3MzM2NiwidHlwZSI6ImF1dGgiLCJrZXkiOiIweDIwNDQyMDNCZGFiZTE0ZTQwNUEyQTY4MTE2MjFkZTI0Njg4RTZlNjkifQ",
+    "payload": "eyJkb21haW4iOiJ3YXJwY2F0Lnh5eiJ9",
+    "signature": "OexyLeUjG/iWJemqCMOgFObd8i3xwUUpaogl8eKtAoBS/mMy/2n1ZTYFICWojInbzCSkaSLLUD1/zB3e5Qiwwhw="
+  },
 "miniapp": {
   "version": "1",
   "name": "WarpCat",

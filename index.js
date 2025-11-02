@@ -206,6 +206,7 @@ function renderMiniFrame({ fid }) {
   <meta name="twitter:card" content="summary_large_image"/>
   <meta name="twitter:image" content="${image}"/>
 
+  <!-- Frame UI -->
   <meta name="fc:frame:image" content="${image}"/>
   <meta name="fc:frame:image:aspect_ratio" content="1:1"/>
 
@@ -218,27 +219,35 @@ function renderMiniFrame({ fid }) {
 
   <meta name="fc:frame:post_url" content="${postUrl}"/>
   <title>WarpCat Mini</title>
+  <style>
+    html,body{margin:0;padding:0;background:#000;height:100%;color:#fff;font-family:system-ui, -apple-system, Segoe UI, Roboto}
+    .wrap{min-height:100%;display:grid;place-items:center}
+    .card{text-align:center;opacity:.9}
+    .card img{width:160px;height:160px;border-radius:24px}
+    .hint{margin-top:12px;font-size:14px;color:#bdbdbd}
+    .links{margin-top:14px}
+    .links a{color:#9cf;text-decoration:none;font-weight:600}
+  </style>
 </head>
-<body></body>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <img src="${image}" alt="WarpCat"/>
+      <div class="hint">Tap <b>Mint</b> to send the transaction • FID: ${fid}</div>
+      <div class="links"><a href="${postUrl}">Refresh</a></div>
+    </div>
+  </div>
 
-<!-- 🔽🔽🔽 Mini App SDK: splash'ı kapatmak için ready() 🔽🔽🔽 -->
-<script type="module">
-  import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk';
-
-  // Bazı client'larda görsel yüklenmesini beklemek iyi olur
-  const onReady = async () => {
-    try {
-      await sdk.actions.ready(); // <-- ZORUNLU (doküman)
-    } catch (e) {
-      // ready() ikinci kez çağrılırsa vs. patlamasın
-      console.warn('sdk.actions.ready() warn:', e?.message || e);
-    }
-  };
-
-  if (document.readyState === 'complete') onReady();
-  else window.addEventListener('load', onReady);
-</script>
-</html>`;
+  <!-- Mini App SDK: splash’i kapatmak için ready() -->
+  <script type="module">
+    import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk';
+    const onReady = async () => {
+      try { await sdk.actions.ready(); } catch(e) { /* ignore double-call */ }
+    };
+    if (document.readyState === 'complete') onReady();
+    else window.addEventListener('load', onReady);
+  </script>
+</body></html>`;
 }
 
 /* GET/POST — Mini frame endpoint */
@@ -322,3 +331,4 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+

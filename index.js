@@ -351,7 +351,7 @@ const frameMintUrl = location.origin + '/frame/mint?fid=' + encodeURIComponent(f
         });
 
         setStatus('Mint submitted. Waiting for confirmation…');
-        resultEl.innerHTML = `Tx: <a class="link" href="https://basescan.org/tx/${hash}" target="_blank" rel="noopener">view on BaseScan</a>`;
+        resultEl.innerHTML = 'Tx: <a class="link" href="https://basescan.org/tx/' + hash + '" target="_blank" rel="noopener">view on BaseScan</a>';
       } catch (err) {
         console.error(err);
         // Masaüstü/preview’da provider yoksa otomatik Frame fallback
@@ -479,6 +479,7 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 
 

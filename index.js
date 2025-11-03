@@ -36,7 +36,7 @@ const NEYNAR_WEBHOOK_SECRET = process.env.NEYNAR_WEBHOOK_SECRET || '';
 const NEYNAR_WEBHOOK_ID     = process.env.NEYNAR_WEBHOOK_ID || '';
 
 /* -------------------- Constants / Helpers -------------------- */
-// keccak256("mint(uint256)") first 4 bytes for OZ v5 signature:
+// keccak256("mint(uint256)") first 4 bytes:
 const MINT_SELECTOR = '0xa0712d68';
 
 const toHex = (n) => (typeof n === 'string' && n.startsWith('0x')) ? n : ('0x' + BigInt(n).toString(16));
@@ -192,11 +192,7 @@ app.get('/metadata/:fid.json', async (req, res) => {
 /* -------------------- MINI APP FRAME -------------------- */
 /**
  * Bu endpoint sadece FRAME meta'ları döner.
- * ÖNEMLİ:
- *  - fc:frame:button:1 => Mint
- *  - action: tx
- *  - target: /mini/tx?fid=...
- *  Warpcast bu meta'lara göre Mint butonunu ÇİZER.
+ * Warpcast bu meta'lara göre Mint butonunu ÇİZER.
  */
 function renderMiniFrame({ fid }) {
   const image   = `${PUBLIC_BASE_URL}/static/og.png`;
@@ -208,7 +204,7 @@ function renderMiniFrame({ fid }) {
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <meta name="fc:frame" content="vNext"/>
 
-<!-- OpenGraph/Twitter (kart önizleme) -->
+<!-- OpenGraph/Twitter -->
 <meta property="og:title" content="WarpCat — Mint"/>
 <meta property="og:type" content="website"/>
 <meta property="og:url" content="${postUrl}"/>
@@ -218,7 +214,7 @@ function renderMiniFrame({ fid }) {
 <meta name="twitter:card" content="summary_large_image"/>
 <meta name="twitter:image" content="${image}"/>
 
-<!-- FRAME UI: MINT -->
+<!-- FRAME UI -->
 <meta name="fc:frame:image" content="${image}"/>
 <meta name="fc:frame:image:aspect_ratio" content="1:1"/>
 
@@ -226,26 +222,30 @@ function renderMiniFrame({ fid }) {
 <meta name="fc:frame:button:1:action" content="tx"/>
 <meta name="fc:frame:button:1:target" content="${txUrl}"/>
 
-<!-- İsteğe bağlı 2. buton (kartı yenilemek için) -->
 <meta name="fc:frame:button:2" content="Refresh"/>
 <meta name="fc:frame:button:2:action" content="post"/>
 
-<!-- POST hedefi -->
 <meta name="fc:frame:post_url" content="${postUrl}"/>
 
 <title>WarpCat Mini</title>
 </head>
-<body style="margin:0;background:#000;"></body>
+<body style="margin:0;background:#000;">
+  <!-- Splash'ın kalmaması için ready() -->
+  <script type="module">
+    import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk';
+    const callReady = async () => { try { await sdk.actions.ready(); } catch (_) {} };
+    if (document.readyState === 'complete') callReady();
+    else window.addEventListener('load', callReady);
+  </script>
+</body>
 </html>`;
 }
 
 /* GET/POST — Mini frame endpoint */
 async function handleMiniFrame(req, res) {
-  // fid hem GET query’den hem de POST body’den gelebilir
   const fid =
     String(req.query.fid || (req.body && (req.body.fid || req.body?.untrustedData?.fid)) || '0');
 
-  // (Opsiyonel) Neynar doğrulaması: POST geldiğinde kontrol et
   if (req.method === 'POST') {
     const v = await validateWithNeynar(req.body || {});
     if (!v.ok) {
@@ -265,7 +265,6 @@ async function handleMiniFrame(req, res) {
 
 app.get('/mini/frame', handleMiniFrame);
 app.post('/mini/frame', handleMiniFrame);
-
 
 /* -------------------- TX (Frames v2) -------------------- */
 async function handleTx(req, res) {
@@ -289,7 +288,10 @@ async function handleTx(req, res) {
     },
   };
 
-  res.status(200).set({ 'Cache-Control': 'no-store, max-age=0' }).json(tx);
+  res
+    .status(200)
+    .set({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store, max-age=0' })
+    .send(JSON.stringify(tx));
 }
 app.get('/mini/tx', handleTx);
 app.post('/mini/tx', handleTx);
@@ -331,6 +333,3 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
-
-
-

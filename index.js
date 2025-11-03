@@ -274,7 +274,7 @@ app.get('/mini/app', (req, res) => {
   </div>
 
   <!-- SDK: ESM import -->
-  <script type="module">
+<script type="module">
   import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';
 
   const statusEl  = document.getElementById('status');
@@ -451,4 +451,5 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 

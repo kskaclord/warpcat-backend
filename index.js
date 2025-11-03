@@ -4,7 +4,6 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
-import { ethers } from 'ethers';
 
 /* -------------------- Paths & App -------------------- */
 const __filename = fileURLToPath(import.meta.url);
@@ -32,12 +31,12 @@ const CHAIN_ID       = process.env.CHAIN_ID ? `eip155:${process.env.CHAIN_ID}` :
 const CONTRACT_ADDR  = (process.env.CONTRACT_ADDRESS || '').toLowerCase();
 const MINT_PRICE_WEI = process.env.MINT_PRICE_WEI || '5000000000000000'; // 0.005 ETH default
 
-const NEYNAR_API_KEY       = process.env.NEYNAR_API_KEY || '';
-const NEYNAR_WEBHOOK_SECRET= process.env.NEYNAR_WEBHOOK_SECRET || '';
-const NEYNAR_WEBHOOK_ID    = process.env.NEYNAR_WEBHOOK_ID || '';
+const NEYNAR_API_KEY        = process.env.NEYNAR_API_KEY || '';
+const NEYNAR_WEBHOOK_SECRET = process.env.NEYNAR_WEBHOOK_SECRET || '';
+const NEYNAR_WEBHOOK_ID     = process.env.NEYNAR_WEBHOOK_ID || '';
 
 /* -------------------- Constants / Helpers -------------------- */
-// keccak256("mint(uint256)") first 4 bytes:
+// keccak256("mint(uint256)") first 4 bytes for OZ v5 signature:
 const MINT_SELECTOR = '0xa0712d68';
 
 const toHex = (n) => (typeof n === 'string' && n.startsWith('0x')) ? n : ('0x' + BigInt(n).toString(16));
@@ -97,7 +96,6 @@ app.get('/.well-known/farcaster.json', (_req, res) => {
     'Expires': '0',
   });
 
-  // Neynar’dan aldığın değerleri koy (sende mevcut)
   const accountAssociation = {
     header:   "eyJmaWQiOjQ3MzM2NiwidHlwZSI6ImF1dGgiLCJrZXkiOiIweDIwNDQyMDNCZGFiZTE0ZTQwNUEyQTY4MTE2MjFkZTI0Njg4RTZlNjkifQ",
     payload:  "eyJkb21haW4iOiJ3YXJwY2F0Lnh5eiJ9",
@@ -112,13 +110,7 @@ app.get('/.well-known/farcaster.json', (_req, res) => {
     homeUrl: `${PUBLIC_BASE_URL}/mini/frame`,
     splashImageUrl: `${PUBLIC_BASE_URL}/static/og.png`,
     splashBackgroundColor: "#000000",
-    splashTextColor: "#ffffff",
-    // (opsiyonel kozmetik alanlar istersen ekleyebilirsin)
-    // buttonTitle: "Mint Now",
-    // ogTitle: "Mint your WarpCat",
-    // ogDescription: "1 FID = 1 WarpCat • PFP → NFT on Base",
-    // ogImageUrl: `${PUBLIC_BASE_URL}/static/og.png`,
-    // castShareUrl: `${PUBLIC_BASE_URL}/mini/frame`
+    splashTextColor: "#ffffff"
   };
 
   res.send(JSON.stringify({ accountAssociation, miniapp }, null, 2));

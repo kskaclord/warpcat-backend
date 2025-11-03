@@ -196,33 +196,35 @@ function renderMiniFrame({ fid }) {
   const postUrl = `${PUBLIC_BASE_URL}/mini/frame?fid=${encodeURIComponent(fid)}`;
 
   return `<!doctype html><html><head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <meta name="fc:frame" content="vNext"/>
+ <meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<meta name="fc:frame" content="vNext"/>
 
-  <!-- Frame buttons -->
-  <meta name="fc:frame:button:1" content="Mint"/>
-  <meta name="fc:frame:button:1:action" content="tx"/>
-  <meta name="fc:frame:button:1:target" content="${txUrl}"/>
+<!-- Görsel -->
+<meta name="fc:frame:image" content="https://warpcat.xyz/static/og.png"/>
+<meta name="fc:frame:image:aspect_ratio" content="1:1"/>
 
-  <meta name="fc:frame:button:2" content="Refresh"/>
-  <meta name="fc:frame:button:2:action" content="post"/>
+<!-- Buton 1 = MINT (TX) -->
+<meta name="fc:frame:button:1" content="Mint"/>
+<meta name="fc:frame:button:1:action" content="tx"/>
+<meta name="fc:frame:button:1:target" content="https://warpcat.xyz/mini/tx?fid=${encodeURIComponent(fid)}"/>
 
-  <meta name="fc:frame:post_url" content="${postUrl}"/>
+<!-- Buton 2 = REFRESH (POST) -->
+<meta name="fc:frame:button:2" content="Refresh"/>
+<meta name="fc:frame:button:2:action" content="post"/>
 
-  <!-- Preview (OG/Twitter) -->
-  <meta property="og:title" content="WarpCat Mint"/>
-  <meta property="og:type" content="website"/>
-  <meta property="og:url" content="${postUrl}"/>
-  <meta property="og:image" content="${image}"/>
-  <meta property="og:image:width" content="1024"/>
-  <meta property="og:image:height" content="1024"/>
-  <meta name="twitter:card" content="summary_large_image"/>
-  <meta name="twitter:image" content="${image}"/>
+<!-- Frame POST URL -->
+<meta name="fc:frame:post_url" content="https://warpcat.xyz/mini/frame?fid=${encodeURIComponent(fid)}"/>
 
-  <!-- Frame image -->
-  <meta name="fc:frame:image" content="${image}"/>
-  <meta name="fc:frame:image:aspect_ratio" content="1:1"/>
+<!-- OG/Twitter opsiyonel -->
+<meta property="og:title" content="WarpCat Mint"/>
+<meta property="og:type" content="website"/>
+<meta property="og:url" content="https://warpcat.xyz/mini/frame?fid=${encodeURIComponent(fid)}"/>
+<meta property="og:image" content="https://warpcat.xyz/static/og.png"/>
+<meta property="og:image:width" content="1024"/>
+<meta property="og:image:height" content="1024"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:image" content="https://warpcat.xyz/static/og.png"/>
 
   <title>WarpCat Mini</title>
   <style>
@@ -337,3 +339,4 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+

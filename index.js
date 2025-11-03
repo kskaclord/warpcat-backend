@@ -236,44 +236,60 @@ app.get('/mini/launch', (_req, res) => {
 /* -------------------- MINI APP FRAME (Mint UI drawn by JSON vNext) -------------------- */
 function renderMiniFrame({ fid }) {
   const image   = `${PUBLIC_BASE_URL}/static/og.png`;
-  const postUrl = `${PUBLIC_BASE_URL}/mini/frame`;
-  const txUrl   = `${PUBLIC_BASE_URL}/mini/tx`; // fid POST ile gelecek
-
-  const frame = {
-    version: 'next',
-    imageUrl: image,
-    buttons: [
-      { title: 'Mint',    action: { type: 'tx',   target: txUrl } },
-      { title: 'Refresh', action: { type: 'post'} },
-    ],
-    postUrl: postUrl,
-  };
+  const postUrl = `${PUBLIC_BASE_URL}/mini/frame?fid=${encodeURIComponent(fid)}`;
+  const txUrl   = `${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(fid)}`;
 
   return `<!doctype html><html><head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
+<!-- Frame vNext -->
+<meta name="fc:frame" content="vNext"/>
+
+<!-- OG/Twitter -->
 <meta property="og:title" content="WarpCat — Mint"/>
 <meta property="og:type" content="website"/>
-<meta property="og:url" content="${PUBLIC_BASE_URL}/mini/frame?fid=${encodeURIComponent(fid)}"/>
+<meta property="og:url" content="${postUrl}"/>
 <meta property="og:image" content="${image}"/>
 <meta property="og:image:width" content="1024"/>
 <meta property="og:image:height" content="1024"/>
 <meta name="twitter:card" content="summary_large_image"/>
 <meta name="twitter:image" content="${image}"/>
 
-<!-- Yeni JSON vNext frame -->
-<meta name="fc:frame" content='${JSON.stringify(frame)}'/>
+<!-- FRAME UI (Mint + Refresh) -->
+<meta name="fc:frame:image" content="${image}"/>
+<meta name="fc:frame:image:aspect_ratio" content="1:1"/>
+
+<meta name="fc:frame:button:1" content="Mint"/>
+<meta name="fc:frame:button:1:action" content="tx"/>
+<meta name="fc:frame:button:1:target" content="${txUrl}"/>
+
+<meta name="fc:frame:button:2" content="Refresh"/>
+<meta name="fc:frame:button:2:action" content="post"/>
+
+<meta name="fc:frame:post_url" content="${postUrl}"/>
+
 <title>WarpCat Mini</title>
+<style>
+  html,body{margin:0;background:#000;height:100%}
+  .hint{position:fixed;inset:auto 0 12px;display:flex;justify-content:center;color:#8aa; font:14px system-ui}
+  .hint a{color:#9cf;text-decoration:none}
+</style>
 </head>
-<body style="margin:0;background:#000;">
-  <!-- Splash'ı kapat -->
+<body>
+  <!-- (isteğe bağlı) tarayıcıda açılırsa küçük ipucu -->
+  <div class="hint">If you see this in a browser, open inside Warpcast. <a href="${postUrl}" style="margin-left:8px">Refresh</a></div>
+
+  <!-- Mini App SDK: splash'ı kapat -->
   <script type="module">
     import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk';
-    (async () => { try { await sdk.actions.ready(); } catch (e) {} })();
+    // double-call güvenli
+    const ready = async () => { try { await sdk.actions.ready(); } catch(_) {} };
+    if (document.readyState === 'complete') ready();
+    else window.addEventListener('load', ready);
   </script>
-</body>
-</html>`;
+</body></html>`;
 }
+
 
 /* GET/POST — Mini frame endpoint */
 async function handleMiniFrame(req, res) {
@@ -358,3 +374,4 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+

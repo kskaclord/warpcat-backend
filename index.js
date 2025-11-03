@@ -196,30 +196,33 @@ function renderLaunchEmbed() {
       action: {
         type: 'launch_frame',
         name: 'WarpCat',
-        url: `${PUBLIC_BASE_URL}/mini/app`,   // Mini webview
+        url: `${PUBLIC_BASE_URL}/mini/app`,
         splashImageUrl: image,
         splashBackgroundColor: '#000000',
       },
     },
   };
 
-  return `<!doctype html><html><head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<meta property="og:title" content="WarpCat — Open Mini App"/>
-<meta property="og:type" content="website"/>
-<meta property="og:url" content="${PUBLIC_BASE_URL}/mini/launch"/>
-<meta property="og:image" content="${image}"/>
-<meta property="og:image:width" content="1024"/>
-<meta property="og:image:height" content="1024"/>
-<meta name="twitter:card" content="summary_large_image"/>
-<meta name="twitter:image" content="${image}"/>
-<meta name="fc:frame" content='${JSON.stringify(frame)}'/>
-<title>WarpCat Launch</title>
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta property="og:title" content="WarpCat — Open Mini App"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:url" content="${PUBLIC_BASE_URL}/mini/launch"/>
+  <meta property="og:image" content="${image}"/>
+  <meta property="og:image:width" content="1024"/>
+  <meta property="og:image:height" content="1024"/>
+  <meta name="twitter:card" content="summary_large_image"/>
+  <meta name="twitter:image" content="${image}"/>
+  <meta name="fc:frame" content='${JSON.stringify(frame)}'/>
+  <title>WarpCat Launch</title>
 </head>
 <body style="margin:0;background:#000;"></body>
 </html>`;
 }
+
 app.get('/mini/launch', (_req, res) => {
   res.status(200).set({
     'Content-Type': 'text/html; charset=utf-8',
@@ -227,13 +230,13 @@ app.get('/mini/launch', (_req, res) => {
   }).send(renderLaunchEmbed());
 });
 
-/* ===================== Mini App (webview) — /mini/app ===================== */
-function renderMiniAppPage({ fid }) {
-  const image = `${PUBLIC_BASE_URL}/static/og.png`;
-  const safeFid = String(fid || '0');
-  const txUrl = `${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(safeFid)}`;
 
-  return `<!doctype html>
+/* ===================== Mini App (webview) — /mini/app ===================== */
+app.get('/mini/app', (_req, res) => {
+  const image = `${PUBLIC_BASE_URL}/static/og.png`;
+  const txBase = `${PUBLIC_BASE_URL}/mini/tx`;
+
+  const html = `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
@@ -280,83 +283,83 @@ function renderMiniAppPage({ fid }) {
     const mintBtn = document.getElementById('mint');
     const refreshBtn = document.getElementById('refresh');
 
+    const qs = new URLSearchParams(location.search);
+    const fid = qs.get('fid') || '0';
+    const txUrl = '${txBase}' + '?fid=' + encodeURIComponent(fid);
+
     function setStatus(t){ statusEl.textContent = t; }
     function setBusy(b){ mintBtn.disabled = refreshBtn.disabled = b; }
 
-    async function main(){
-      try{
-        await sdk.actions.ready();              // Ready not called sorunu gider
+    async function init() {
+      try {
+        await sdk.actions.ready();
         okDot.style.background = '#0bd30b';
         setStatus('Ready.');
-      }catch(e){
-        setStatus('Init error: ' + (e?.message || e));
+      } catch (e) {
+        setStatus('Init error: ' + (e && e.message ? e.message : e));
         console.error(e);
         return;
       }
 
       refreshBtn.onclick = () => location.reload();
 
-    mintBtn.onclick = async () => {
-  setBusy(true);
-  resultEl.textContent = '';
-  try {
-    setStatus('Preparing transaction…');
+      mintBtn.onclick = async () => {
+        setBusy(true);
+        resultEl.textContent = '';
+        try {
+          setStatus('Preparing transaction…');
 
-    // 1) Backend’ten tx payload
-    const resp = await fetch('${PUBLIC_BASE_URL}/mini/tx?fid=' + encodeURIComponent(fid), {
-      method: 'GET',
-      headers: { 'accept': 'application/json', 'cache-control': 'no-cache' }
-    });
-    if (!resp.ok) throw new Error('Tx payload failed: ' + resp.status);
-    const { chainId, params } = await resp.json(); // { to, data, value }
+          // 1) backend'ten tx payload al
+          const resp = await fetch(txUrl, { method: 'GET', headers: { 'accept': 'application/json', 'cache-control': 'no-cache' } });
+          if (!resp.ok) throw new Error('Tx payload failed: ' + resp.status);
+          const tx = await resp.json(); // { chainId, method:'eth_sendTransaction', params:{ to,data,value } }
 
-    // 2) EIP-1193 provider'ı al
-    const provider = sdk.wallet.getEthereumProvider();
-    if (!provider || !provider.request) {
-      throw new Error('Wallet provider missing');
+          // 2) EIP-1193 provider
+          const provider = sdk.wallet.getEthereumProvider();
+          if (!provider || !provider.request) throw new Error('Wallet provider missing');
+
+          // 3) adres iste (gerekirse)
+          let from;
+          try {
+            const accounts = await provider.request({ method: 'eth_requestAccounts' });
+            if (accounts && accounts.length) from = accounts[0];
+          } catch (_) { /* kullanıcı reddedebilir, sorun değil */ }
+
+          // 4) tx gönder
+          setStatus('Opening wallet…');
+          const hash = await provider.request({
+            method: 'eth_sendTransaction',
+            params: [{
+              from: from,
+              to: tx.params.to,
+              data: tx.params.data,
+              value: tx.params.value,
+              chainId: tx.chainId
+            }]
+          });
+
+          setStatus('Mint submitted. Waiting for confirmation…');
+          resultEl.innerHTML = 'Tx: <a class="link" href="https://basescan.org/tx/' + hash + '" target="_blank" rel="noopener">view on BaseScan</a>';
+
+        } catch (err) {
+          console.error(err);
+          setStatus('Mint failed: ' + (err && err.message ? err.message : err));
+        } finally {
+          setBusy(false);
+        }
+      };
     }
 
-    // 3) Gerekirse adres iste (from alanı için)
-    const accounts = await provider.request({ method: 'eth_requestAccounts' }).catch(() => []);
-    const from = accounts && accounts[0] ? accounts[0] : undefined;
+    init();
+  </script>
+</body>
+</html>`;
 
-    // 4) İşlemi gönder
-    setStatus('Opening wallet…');
-    const txHash = await provider.request({
-      method: 'eth_sendTransaction',
-      params: [{
-        from,                  // undefined kalırsa cüzdan yine de seçtirir
-        to: params.to,
-        data: params.data,
-        value: params.value,   // hex wei
-        chainId                // "eip155:8453"
-      }]
-    });
-
-    // 5) Başarı
-    setStatus('Mint submitted. Waiting for confirmation…');
-    resultEl.innerHTML =
-      'Tx: <a class="link" href="https://basescan.org/tx/' + txHash +
-      '" target="_blank" rel="noopener">view on BaseScan</a>';
-
-  } catch (err) {
-    console.error(err);
-    setStatus('Mint failed: ' + (err?.message || err));
-  } finally {
-    setBusy(false);
-  }
-};
-
-
-app.get('/mini/app', (req, res) => {
-  const fid = String(req.query.fid || '0');
   res
     .status(200)
-    .set({ 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store' })
-    .send(renderMiniAppPage({ fid }));
+    .set({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
+    .send(html);
 });
-
-
 
 /* -------------------- Frame (Mint) — feed içi kart: JS yok, sadece meta -------------------- */
 function renderMintFrame({ fid }) {
@@ -466,6 +469,7 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 
 

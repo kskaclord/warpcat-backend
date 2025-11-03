@@ -274,92 +274,102 @@ app.get('/mini/app', (_req, res) => {
     </div>
   </div>
 
-  <script type="module">
-    import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';
+<script type="module">
+  // CDN’den saf ESM importlar
+  import { createConfig, connect, getAccount, sendTransaction } from 'https://esm.sh/@wagmi/core@2.13.4';
+  import { http } from 'https://esm.sh/viem@2.13.7';
+  import { base } from 'https://esm.sh/viem@2.13.7/chains';
+  import { FarcasterMiniAppConnector } from 'https://esm.sh/@farcaster/miniapp-wagmi-connector@0.1.7';
+  import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';
 
-    const statusEl = document.getElementById('status');
-    const resultEl = document.getElementById('result');
-    const okDot = document.getElementById('ok');
-    const mintBtn = document.getElementById('mint');
-    const refreshBtn = document.getElementById('refresh');
+  // UI elemanları
+  const statusEl   = document.getElementById('status');
+  const resultEl   = document.getElementById('result');
+  const okDot      = document.getElementById('ok');
+  const mintBtn    = document.getElementById('mint');
+  const refreshBtn = document.getElementById('refresh');
 
-    const qs = new URLSearchParams(location.search);
-    const fid = qs.get('fid') || '0';
-    const txUrl = '${txBase}' + '?fid=' + encodeURIComponent(fid);
+  const qs  = new URLSearchParams(location.search);
+  const fid = qs.get('fid') || '0';
+  const txUrl = `${location.origin}/mini/tx?fid=${encodeURIComponent(fid)}`;
+  const frameMintUrl = `${location.origin}/frame/mint?fid=${encodeURIComponent(fid)}`;
 
-    function setStatus(t){ statusEl.textContent = t; }
-    function setBusy(b){ mintBtn.disabled = refreshBtn.disabled = b; }
+  function setStatus(t){ statusEl.textContent = t; }
+  function setBusy(b){ mintBtn.disabled = refreshBtn.disabled = b; }
 
-    async function init() {
-      try {
-        await sdk.actions.ready();
-        okDot.style.background = '#0bd30b';
-        setStatus('Ready.');
-      } catch (e) {
-        setStatus('Init error: ' + (e && e.message ? e.message : e));
-        console.error(e);
-        return;
-      }
+  // Tek connector (yeniden yaratma)
+  const fcConnector = new FarcasterMiniAppConnector({ chains: [base] });
 
-      refreshBtn.onclick = () => location.reload();
+  // Wagmi core config
+  const config = createConfig({
+    chains: [base],
+    transports: { [base.id]: http() },
+    connectors: [fcConnector],
+  });
 
-      mintBtn.onclick = async () => {
-        setBusy(true);
-        resultEl.textContent = '';
-        try {
-          setStatus('Preparing transaction…');
-
-          // 1) backend'ten tx payload al
-          const resp = await fetch(txUrl, { method: 'GET', headers: { 'accept': 'application/json', 'cache-control': 'no-cache' } });
-          if (!resp.ok) throw new Error('Tx payload failed: ' + resp.status);
-          const tx = await resp.json(); // { chainId, method:'eth_sendTransaction', params:{ to,data,value } }
-
-          // 2) EIP-1193 provider
-          const provider = sdk.wallet.getEthereumProvider();
-          if (!provider || !provider.request) throw new Error('Wallet provider missing');
-
-          // 3) adres iste (gerekirse)
-          let from;
-          try {
-            const accounts = await provider.request({ method: 'eth_requestAccounts' });
-            if (accounts && accounts.length) from = accounts[0];
-          } catch (_) { /* kullanıcı reddedebilir, sorun değil */ }
-
-          // 4) tx gönder
-          setStatus('Opening wallet…');
-          const hash = await provider.request({
-            method: 'eth_sendTransaction',
-            params: [{
-              from: from,
-              to: tx.params.to,
-              data: tx.params.data,
-              value: tx.params.value,
-              chainId: tx.chainId
-            }]
-          });
-
-          setStatus('Mint submitted. Waiting for confirmation…');
-          resultEl.innerHTML = 'Tx: <a class="link" href="https://basescan.org/tx/' + hash + '" target="_blank" rel="noopener">view on BaseScan</a>';
-
-        } catch (err) {
-          console.error(err);
-          setStatus('Mint failed: ' + (err && err.message ? err.message : err));
-        } finally {
-          setBusy(false);
-        }
-      };
+  async function init(){
+    try {
+      // Ready çağrısı (Warpcast uyarısını susturur)
+      await sdk.actions.ready();
+      okDot.style.background = '#0bd30b';
+      setStatus('Ready.');
+    } catch(e) {
+      // Ready başarısız olursa da devam edelim; sadece logla
+      console.warn('sdk.ready error:', e);
     }
 
-    init();
-  </script>
-</body>
-</html>`;
+    refreshBtn.onclick = () => location.reload();
 
-  res
-    .status(200)
-    .set({ 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
-    .send(html);
-});
+    mintBtn.onclick = async () => {
+      setBusy(true);
+      resultEl.textContent = '';
+      try {
+        // 1) TX payload backend’den
+        const r = await fetch(txUrl, { headers: { 'accept':'application/json', 'cache-control':'no-cache' }});
+        if (!r.ok) throw new Error('Tx payload failed: ' + r.status);
+        const tx = await r.json(); // { chainId:"eip155:8453", method:"eth_sendTransaction", params:{to,data,value} }
+
+        // 2) Wallet/connector hazır mı? Değilse bağlan
+        let acc = getAccount(config);
+        if (!acc.isConnected) {
+          await connect(config, { connector: fcConnector });
+          acc = getAccount(config);
+        }
+        if (!acc.isConnected) throw new Error('Wallet provider missing');
+
+        // 3) chainId sayıya çevir
+        const chainIdNum = Number(String(tx.chainId).split(':').pop() || base.id);
+
+        // 4) Wagmi ile gönder
+        setStatus('Opening wallet…');
+        const hash = await sendTransaction(config, {
+          chainId: chainIdNum,
+          to: tx.params.to,
+          data: tx.params.data,
+          // tx.params.value hex → bigint
+          value: BigInt(tx.params.value),
+        });
+
+        setStatus('Mint submitted. Waiting for confirmation…');
+        resultEl.innerHTML = `Tx: <a class="link" href="https://basescan.org/tx/${hash}" target="_blank" rel="noopener">view on BaseScan</a>`;
+      } catch (err) {
+        console.error(err);
+        // Masaüstü/preview’da provider yoksa otomatik Frame fallback
+        if (String(err?.message || err).toLowerCase().includes('wallet provider')) {
+          setStatus('No wallet in this preview. Opening Frame mint…');
+          try { await sdk.actions.openUrl(frameMintUrl); } catch { location.href = frameMintUrl; }
+        } else {
+          setStatus('Mint failed: ' + (err?.message || err));
+        }
+      } finally {
+        setBusy(false);
+      }
+    };
+  }
+
+  init();
+</script>
+
 
 /* -------------------- Frame (Mint) — feed içi kart: JS yok, sadece meta -------------------- */
 function renderMintFrame({ fid }) {
@@ -469,6 +479,7 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 
 

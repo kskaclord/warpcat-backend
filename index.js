@@ -234,18 +234,14 @@ app.get('/mini/launch', (_req, res) => {
 });
 
 /* -------------------- MINI APP FRAME (Mint UI drawn by JSON vNext) -------------------- */
-function renderMiniFrame({ fid }) {
+function renderMintFrame({ fid }) {
   const image   = `${PUBLIC_BASE_URL}/static/og.png`;
-  const postUrl = `${PUBLIC_BASE_URL}/mini/frame?fid=${encodeURIComponent(fid)}`;
+  const postUrl = `${PUBLIC_BASE_URL}/frame/mint?fid=${encodeURIComponent(fid)}`;
   const txUrl   = `${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(fid)}`;
 
   return `<!doctype html><html><head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<!-- Frame vNext -->
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
 <meta name="fc:frame" content="vNext"/>
-
-<!-- OG/Twitter -->
 <meta property="og:title" content="WarpCat — Mint"/>
 <meta property="og:type" content="website"/>
 <meta property="og:url" content="${postUrl}"/>
@@ -255,7 +251,6 @@ function renderMiniFrame({ fid }) {
 <meta name="twitter:card" content="summary_large_image"/>
 <meta name="twitter:image" content="${image}"/>
 
-<!-- FRAME UI (Mint + Refresh) -->
 <meta name="fc:frame:image" content="${image}"/>
 <meta name="fc:frame:image:aspect_ratio" content="1:1"/>
 
@@ -267,50 +262,21 @@ function renderMiniFrame({ fid }) {
 <meta name="fc:frame:button:2:action" content="post"/>
 
 <meta name="fc:frame:post_url" content="${postUrl}"/>
-
-<title>WarpCat Mini</title>
-<style>
-  html,body{margin:0;background:#000;height:100%}
-  .hint{position:fixed;inset:auto 0 12px;display:flex;justify-content:center;color:#8aa; font:14px system-ui}
-  .hint a{color:#9cf;text-decoration:none}
-</style>
-</head>
-<body>
-  <!-- (isteğe bağlı) tarayıcıda açılırsa küçük ipucu -->
-  <div class="hint">If you see this in a browser, open inside Warpcast. <a href="${postUrl}" style="margin-left:8px">Refresh</a></div>
-
-  <!-- Mini App SDK: splash'ı kapat -->
-  <script type="module">
-    import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk';
-    // double-call güvenli
-    const ready = async () => { try { await sdk.actions.ready(); } catch(_) {} };
-    if (document.readyState === 'complete') ready();
-    else window.addEventListener('load', ready);
-  </script>
-</body></html>`;
+<title>WarpCat Frame</title>
+</head><body style="margin:0;background:#000"></body></html>`;
 }
 
-
-/* GET/POST — Mini frame endpoint */
-async function handleMiniFrame(req, res) {
-  const fid = String(
-    req.query.fid ||
-    req.body?.fid ||
-    req.body?.untrustedData?.fid || '0'
-  );
-
+async function handleMintFrame(req, res) {
+  const fid = String(req.query.fid || req.body?.fid || '0');
   if (req.method === 'POST') {
     const v = await validateWithNeynar(req.body || {});
     if (!v.ok) return res.status(401).json({ error: 'neynar_validation_failed' });
   }
-
-  const html = renderMiniFrame({ fid });
-  res.status(200)
-     .set({'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store, max-age=0'})
-     .send(html);
+  res.status(200).set({'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}).send(renderMintFrame({ fid }));
 }
-app.get('/mini/frame', handleMiniFrame);
-app.post('/mini/frame', handleMiniFrame);
+app.get('/frame/mint', handleMintFrame);
+app.post('/frame/mint', handleMintFrame);
+
 
 /* -------------------- TX (Frames v2) -------------------- */
 async function handleTx(req, res) {
@@ -374,4 +340,5 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 

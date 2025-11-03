@@ -7,20 +7,24 @@
 "miniapp": {
     "version": "1",
     "name": "WarpCat",
-    "description": "Mint your WarpCat NFT directly from Farcaster.",
-    "iconUrl": "https://warpcat.xyz/static/og.png",
     "homeUrl": "https://warpcat.xyz/mini/frame",
+    "iconUrl": "https://warpcat.xyz/static/og.png",
     "splashImageUrl": "https://warpcat.xyz/static/og.png",
     "splashBackgroundColor": "#000000",
     "splashTextColor": "#ffffff",
 
     "buttonTitle": "Mint Now",
-    "ogTitle": "Mint your WarpCat",
-    "ogDescription": "1 FID = 1 WarpCat • PFP → NFT on Base",
-    "ogImageUrl": "https://warpcat.xyz/static/og.png",
-    "castShareUrl": "https://warpcat.xyz/mini/frame",
+    "subtitle": "1 FID = 1 WarpCat",
+    "description": "Mint your WarpCat NFT directly on Base. Token ID equals your Farcaster FID.",
 
     "primaryCategory": "art-creativity",
-    "tags": ["nft","art","base","profile"]
+    "tags": ["nft", "mint", "warpcat"],
+
+    "heroImageUrl": "https://warpcat.xyz/static/og.png",
+    "ogTitle": "Mint your WarpCat",
+    "ogDescription": "PFP → NFT on Base • 1 FID = 1 WarpCat",
+    "ogImageUrl": "https://warpcat.xyz/static/og.png",
+
+    "castShareUrl": "https://warpcat.xyz/mini/frame"
   }
 }

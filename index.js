@@ -296,47 +296,57 @@ function renderMiniAppPage({ fid }) {
 
       refreshBtn.onclick = () => location.reload();
 
-      mintBtn.onclick = async () => {
-        setBusy(true);
-        resultEl.textContent = '';
-        try{
-          setStatus('Preparing transaction…');
+    mintBtn.onclick = async () => {
+  setBusy(true);
+  resultEl.textContent = '';
+  try {
+    setStatus('Preparing transaction…');
 
-          // 1) Backend’ten tx payload al
-          const resp = await fetch('${txUrl}', {
-            method: 'GET',
-            headers: { 'accept': 'application/json', 'cache-control':'no-cache' }
-          });
-          if(!resp.ok) throw new Error('Tx payload failed: ' + resp.status);
-          const json = await resp.json();   // { chainId, method, params:{to,data,value} }
+    // 1) Backend’ten tx payload
+    const resp = await fetch('${PUBLIC_BASE_URL}/mini/tx?fid=' + encodeURIComponent(fid), {
+      method: 'GET',
+      headers: { 'accept': 'application/json', 'cache-control': 'no-cache' }
+    });
+    if (!resp.ok) throw new Error('Tx payload failed: ' + resp.status);
+    const { chainId, params } = await resp.json(); // { to, data, value }
 
-          // 2) İşlemi gönder — cüzdan penceresi mini-app içinde açılır
-          setStatus('Opening wallet…');
-          const txHash = await sdk.wallet.sendTransaction({
-            to: json.params.to,
-            data: json.params.data,
-            value: json.params.value,
-            chainId: json.chainId      // "eip155:8453"
-          });
-
-          setStatus('Mint submitted. Waiting for confirmation…');
-          const link = 'https://basescan.org/tx/' + txHash;
-          resultEl.innerHTML = 'Tx: <a class="link" href="' + link + '" target="_blank" rel="noopener">view on BaseScan</a>';
-        }catch(err){
-          console.error(err);
-          // provider.request is not a function vb. hatalar burada görünür
-          setStatus('Mint failed: ' + (err?.message || err));
-        }finally{
-          setBusy(false);
-        }
-      };
+    // 2) EIP-1193 provider'ı al
+    const provider = sdk.wallet.getEthereumProvider();
+    if (!provider || !provider.request) {
+      throw new Error('Wallet provider missing');
     }
 
-    main();
-  </script>
-</body>
-</html>`;
-}
+    // 3) Gerekirse adres iste (from alanı için)
+    const accounts = await provider.request({ method: 'eth_requestAccounts' }).catch(() => []);
+    const from = accounts && accounts[0] ? accounts[0] : undefined;
+
+    // 4) İşlemi gönder
+    setStatus('Opening wallet…');
+    const txHash = await provider.request({
+      method: 'eth_sendTransaction',
+      params: [{
+        from,                  // undefined kalırsa cüzdan yine de seçtirir
+        to: params.to,
+        data: params.data,
+        value: params.value,   // hex wei
+        chainId                // "eip155:8453"
+      }]
+    });
+
+    // 5) Başarı
+    setStatus('Mint submitted. Waiting for confirmation…');
+    resultEl.innerHTML =
+      'Tx: <a class="link" href="https://basescan.org/tx/' + txHash +
+      '" target="_blank" rel="noopener">view on BaseScan</a>';
+
+  } catch (err) {
+    console.error(err);
+    setStatus('Mint failed: ' + (err?.message || err));
+  } finally {
+    setBusy(false);
+  }
+};
+
 
 app.get('/mini/app', (req, res) => {
   const fid = String(req.query.fid || '0');
@@ -456,6 +466,7 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 
 

@@ -21,7 +21,7 @@ app.use((req, _res, next) => {
   next();
 });
 
-/* -------------------- Config (single source of truth) -------------------- */
+/* -------------------- Config -------------------- */
 const PORT = Number(process.env.PORT || 8080);
 const PUBLIC_BASE_URL =
   (process.env.PUBLIC_BASE_URL && process.env.PUBLIC_BASE_URL.replace(/\/$/, '')) ||
@@ -31,11 +31,12 @@ const CHAIN_ID       = process.env.CHAIN_ID ? `eip155:${process.env.CHAIN_ID}` :
 const CONTRACT_ADDR  = (process.env.CONTRACT_ADDRESS || '').toLowerCase();
 const MINT_PRICE_WEI = process.env.MINT_PRICE_WEI || '5000000000000000'; // 0.005 ETH default
 
-const NEYNAR_API_KEY        = process.env.NEYNAR_API_KEY || '';
+// Sende NEYNAR_APP_KEY var; ikisini de destekleyelim
+const NEYNAR_API_KEY        = process.env.NEYNAR_API_KEY || process.env.NEYNAR_APP_KEY || '';
 const NEYNAR_WEBHOOK_SECRET = process.env.NEYNAR_WEBHOOK_SECRET || '';
 const NEYNAR_WEBHOOK_ID     = process.env.NEYNAR_WEBHOOK_ID || '';
 
-/* -------------------- Constants / Helpers -------------------- */
+/* -------------------- Helpers -------------------- */
 // keccak256("mint(uint256)") -> 0xa0712d68
 const MINT_SELECTOR = '0xa0712d68';
 
@@ -58,7 +59,7 @@ async function validateWithNeynar(payload) {
     const r = await fetch('https://api.neynar.com/v2/frames/validate', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'api_key': NEYNAR_API_KEY },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(payload ?? {}),
     });
     if (!r.ok) return { ok: false, status: r.status };
     const json = await r.json();
@@ -72,7 +73,6 @@ async function validateWithNeynar(payload) {
 
 /* -------------------- Static -------------------- */
 const STATIC_DIR = path.join(__dirname, 'static');
-
 if (fs.existsSync(STATIC_DIR)) {
   app.use('/static', express.static(STATIC_DIR, {
     setHeaders(res, filePath) {
@@ -86,7 +86,7 @@ if (fs.existsSync(STATIC_DIR)) {
   }));
 }
 
-/* /.well-known/farcaster.json – DİNAMİK manifest */
+/* -------------------- /.well-known/farcaster.json (dinamik) -------------------- */
 app.get('/.well-known/farcaster.json', (_req, res) => {
   res.set({
     'Content-Type': 'application/json; charset=utf-8',
@@ -101,17 +101,16 @@ app.get('/.well-known/farcaster.json', (_req, res) => {
     signature:"OexyLeUjG/iWJemqCMOgFObd8i3xwUUpaogl8eKtAoBS/mMy/2n1ZTYFICWojInbzCSkaSLLUD1/zB3e5Qiwwhw="
   };
 
+  // ÖNEMLİ: homeUrl artık /mini/launch
   const miniapp = {
     version: "1",
     name: "WarpCat",
     description: "Mint your WarpCat NFT directly from Farcaster.",
     iconUrl: `${PUBLIC_BASE_URL}/static/og.png`,
-    homeUrl: `${PUBLIC_BASE_URL}/mini/frame`,
+    homeUrl: `${PUBLIC_BASE_URL}/mini/launch`,
     splashImageUrl: `${PUBLIC_BASE_URL}/static/og.png`,
     splashBackgroundColor: "#000000",
     splashTextColor: "#ffffff",
-    // Cast paylaşırken kullanacağımız launch URL (Embed Tool da bunu doğrular)
-    castShareUrl: `${PUBLIC_BASE_URL}/mini/launch`,
     ogTitle: "WarpCat — Mini App",
     ogImageUrl: `${PUBLIC_BASE_URL}/static/og.png`,
   };
@@ -119,6 +118,7 @@ app.get('/.well-known/farcaster.json', (_req, res) => {
   res.send(JSON.stringify({ accountAssociation, miniapp }, null, 2));
 });
 
+// (varsa) statik .well-known altını da servis et
 const WELL_KNOWN_DIR = path.join(STATIC_DIR, '.well-known');
 if (fs.existsSync(WELL_KNOWN_DIR)) {
   app.use('/.well-known', express.static(WELL_KNOWN_DIR, {
@@ -129,7 +129,7 @@ if (fs.existsSync(WELL_KNOWN_DIR)) {
   }));
 }
 
-/* -------------------- DYNAMIC METADATA (OpenSea-compatible) -------------------- */
+/* -------------------- OpenSea Metadata -------------------- */
 app.get('/metadata/:fid.json', async (req, res) => {
   const fid = String(req.params.fid || '0');
 
@@ -185,11 +185,10 @@ app.get('/metadata/:fid.json', async (req, res) => {
   }
 });
 
-/* -------------------- LAUNCH EMBED (for Composer & Embed Tool) -------------------- */
+/* -------------------- Launch Embed (Mini App) -------------------- */
 /**
- * /mini/launch → cast içine yapıştıracağın link.
- * Burada tek bir JSON meta bulunur: fc:frame = { version:"next", button:{ action:"launch_frame", ... } }
- * Embed Tool bu sayfayı "Embed Valid ✅" yapar.
+ * /mini/launch → Mini App’ı açar (Open).
+ * Embed Tool bu sayfayı “Embed Valid ✅” olarak görür.
  */
 function renderLaunchEmbed() {
   const image = `${PUBLIC_BASE_URL}/static/og.png`;
@@ -201,7 +200,7 @@ function renderLaunchEmbed() {
       action: {
         type: 'launch_frame',
         name: 'WarpCat',
-        url: `${PUBLIC_BASE_URL}/mini/frame`,
+        url: `${PUBLIC_BASE_URL}/frame/mint`, // mini app içinden mint frame’e de gidebilirsin
         splashImageUrl: image,
         splashBackgroundColor: '#000000',
       },
@@ -225,7 +224,6 @@ function renderLaunchEmbed() {
 <body style="margin:0;background:#000;"></body>
 </html>`;
 }
-
 app.get('/mini/launch', (_req, res) => {
   res.status(200).set({
     'Content-Type': 'text/html; charset=utf-8',
@@ -233,7 +231,7 @@ app.get('/mini/launch', (_req, res) => {
   }).send(renderLaunchEmbed());
 });
 
-/* -------------------- MINI APP FRAME (Mint UI drawn by JSON vNext) -------------------- */
+/* -------------------- Frame (Mint) -------------------- */
 function renderMintFrame({ fid }) {
   const image   = `${PUBLIC_BASE_URL}/static/og.png`;
   const postUrl = `${PUBLIC_BASE_URL}/frame/mint?fid=${encodeURIComponent(fid)}`;
@@ -242,6 +240,7 @@ function renderMintFrame({ fid }) {
   return `<!doctype html><html><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
 <meta name="fc:frame" content="vNext"/>
+
 <meta property="og:title" content="WarpCat — Mint"/>
 <meta property="og:type" content="website"/>
 <meta property="og:url" content="${postUrl}"/>
@@ -277,7 +276,6 @@ async function handleMintFrame(req, res) {
 app.get('/frame/mint', handleMintFrame);
 app.post('/frame/mint', handleMintFrame);
 
-
 /* -------------------- TX (Frames v2) -------------------- */
 async function handleTx(req, res) {
   if (req.method === 'POST') {
@@ -307,7 +305,7 @@ async function handleTx(req, res) {
 app.get('/mini/tx', handleTx);
 app.post('/mini/tx', handleTx);
 
-/* -------------------- Neynar Mini App Notifications Webhook -------------------- */
+/* -------------------- Neynar Webhook -------------------- */
 app.post('/neynar/webhook', (req, res) => {
   try {
     const bodyStr   = JSON.stringify(req.body || {});
@@ -340,5 +338,3 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
-
-

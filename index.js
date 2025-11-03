@@ -229,19 +229,17 @@ app.get('/mini/launch', (_req, res) => {
   }).send(renderLaunchEmbed());
 });
 /* ===================== [EKLE] Mini App (web sayfası) ===================== */
-// Basit, şık bir sayfa: logo, FID göstergesi, Mint ve Refresh butonları.
-// İçeride sdk.actions.ready() çağrısı var; siyah ekran kalkar.
 function renderMiniAppPage({ fid }) {
   const image = `${PUBLIC_BASE_URL}/static/og.png`;
   const safeFid = String(fid || '0');
   const txUrl = `${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(safeFid)}`;
 
   return `<!doctype html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>WarpCat — Mini App</title>
+<title>WarpCat — Mint</title>
 <link rel="preload" as="image" href="${image}">
 <style>
   :root { color-scheme: dark; }
@@ -262,31 +260,19 @@ function renderMiniAppPage({ fid }) {
 </style>
 <script type="module">
   import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';
-
-  // Splash'ı kaldır
-  (async () => {
-    try { await sdk.actions.ready(); } catch(e) { console.warn('ready() failed', e); }
-  })();
+  (async () => { try { await sdk.actions.ready(); } catch(e) { console.warn('ready() failed', e); } })();
 
   async function doMint() {
     try {
-      // backend'den tx payload al
       const res = await fetch('${txUrl}', { method: 'GET', headers: { 'cache-control':'no-cache' } });
       if (!res.ok) throw new Error('tx endpoint failed');
       const tx = await res.json();
-
-      // Warpcast Mini App içinde transaction isteği (postMessage pattern)
-      // Warpcast bu formatı anlar (eth_sendTransaction).
       window.parent?.postMessage({ type: 'warp_sendTransaction', data: tx }, '*');
     } catch (e) {
-      alert('Mint başlatılamadı: ' + (e && e.message ? e.message : e));
+      alert('Unable to start mint: ' + (e?.message || e));
     }
   }
-
-  function doRefresh() {
-    location.reload();
-  }
-
+  function doRefresh(){ location.reload(); }
   window.__WC_APP__ = { doMint, doRefresh };
 </script>
 </head>
@@ -296,7 +282,7 @@ function renderMiniAppPage({ fid }) {
       <div class="hero">
         <img src="${image}" alt="WarpCat"/>
         <h1>WarpCat — Mint</h1>
-        <p>1 FID = 1 NFT • Base 🔵</p>
+        <p>1 FID = 1 NFT · Base 🔵</p>
         <p style="margin-top:8px"><span class="pill">FID: ${safeFid}</span></p>
       </div>
       <div class="body">
@@ -304,13 +290,14 @@ function renderMiniAppPage({ fid }) {
           <button class="btn primary" onclick="__WC_APP__.doMint()">✨ Mint</button>
           <button class="btn" onclick="__WC_APP__.doRefresh()">Refresh</button>
         </div>
-        <div class="note">Cüzdan mini pencerede gözükür; onaylayınca mint tamamlanır.</div>
+        <div class="note">Your wallet will open in the mini window. Confirm to complete the mint.</div>
       </div>
     </div>
   </div>
 </body>
 </html>`;
 }
+
 
 /* [EKLE] Mini App route */
 app.get('/mini/app', (req, res) => {
@@ -428,5 +415,6 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 

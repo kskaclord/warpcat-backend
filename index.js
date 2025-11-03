@@ -230,6 +230,7 @@ app.get('/mini/launch', (_req, res) => {
 });
 // ---- Mini App (webview) sayfası: /mini/app
 // == Mini App (webview) : /mini/app  ===================================
+// == Mini App (webview) : /mini/app  ===================================
 app.get('/mini/app', (_req, res) => {
   const image = `${PUBLIC_BASE_URL}/static/og.png`;
   res.status(200).set({
@@ -240,7 +241,7 @@ app.get('/mini/app', (_req, res) => {
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>WarpCat — Mini App</title>
+  <title>WarpCat — Mint</title>
   <meta property="og:image" content="${image}"/>
   <style>
     :root { color-scheme: dark; }
@@ -253,6 +254,7 @@ app.get('/mini/app', (_req, res) => {
     .muted{opacity:.75;font-size:13px;margin-top:12px}
     img.logo{width:96px;height:96px;border-radius:20px;border:1px solid #222;background:#111}
     #ok{display:inline-block;width:8px;height:8px;border-radius:50%;background:#f00;vertical-align:middle;margin-left:6px}
+    a.link{color:#8ab4ff;text-decoration:none}
   </style>
 </head>
 <body>
@@ -268,42 +270,83 @@ app.get('/mini/app', (_req, res) => {
       </div>
 
       <div id="status" class="muted">Loading…</div>
+      <div id="result" class="muted" style="margin-top:8px"></div>
     </div>
   </div>
 
-  <!-- ESM import: en sağlam yöntem -->
+  <!-- ESM import (garanti): -->
   <script type="module">
     import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';
 
     const statusEl = document.getElementById('status');
+    const resultEl = document.getElementById('result');
     const okDot = document.getElementById('ok');
+    const mintBtn = document.getElementById('mint');
+    const refreshBtn = document.getElementById('refresh');
+
+    const qs = new URLSearchParams(location.search);
+    // composer/launch tarafında ?fid gelmeyebilir; 0 geçeriz (kontrat zaten FID'i arg olarak alıyor)
+    const fid = qs.get('fid') || '0';
+
+    function setStatus(t){ statusEl.textContent = t; }
+    function setBusy(b){ mintBtn.disabled = refreshBtn.disabled = b; }
 
     async function main(){
       try{
-        // Bu çağrı yapılınca “Ready not called” biter.
-        await sdk.actions.ready();
+        await sdk.actions.ready(); // “Ready not called” biter
         okDot.style.background = '#0bd30b';
-        statusEl.textContent = 'Ready.';
+        setStatus('Ready.');
       }catch(e){
-        statusEl.textContent = 'Init error: ' + (e?.message || e);
+        setStatus('Init error: ' + (e?.message || e));
         console.error(e);
         return;
       }
 
-      // Basit refresh
-      document.getElementById('refresh').onclick = () => location.reload();
+      refreshBtn.onclick = () => location.reload();
 
-      // Şimdilik demo: cüzdan akışını bir sonraki adımda bağlayacağız
-      document.getElementById('mint').onclick = async () => {
+      mintBtn.onclick = async () => {
+        setBusy(true);
+        resultEl.textContent = '';
         try{
-          statusEl.textContent = 'Opening wallet…';
-          // Geçici: tx payload’ını gör
-          window.open('${PUBLIC_BASE_URL}/mini/tx?fid=0', '_blank');
+          setStatus('Preparing transaction…');
 
-          // Sonraki adım: sdk üzerinden gerçek tx gönderme (eth_sendTransaction)
-          // await sdk.wallet.sendTransaction({...});
+          // 1) Backend’den tx payload
+          const resp = await fetch('${PUBLIC_BASE_URL}/mini/tx?fid=' + encodeURIComponent(fid), {
+            method: 'GET',
+            headers: { 'accept': 'application/json' }
+          });
+          if(!resp.ok){
+            throw new Error('Tx payload failed: ' + resp.status);
+          }
+          const json = await resp.json();
+          // { chainId:"eip155:8453", method:"eth_sendTransaction", params:{ to, data, value } }
+
+          // 2) (opsiyonel) aktif adresi kontrol et
+          const addrs = await sdk.wallet.getAddresses().catch(() => []);
+          if(!addrs || addrs.length === 0){
+            // sendTransaction zaten cüzdan penceresi açacak; sadece bilgi verelim
+            console.log('No wallet yet; will request via sendTransaction');
+          }
+
+          // 3) İşlemi gönder
+          setStatus('Opening wallet…');
+          const txHash = await sdk.wallet.sendTransaction({
+            to: json.params.to,
+            data: json.params.data,
+            value: json.params.value,   // hex string (wei)
+            chainId: json.chainId       // "eip155:8453"
+          });
+
+          // 4) Başarı
+          setStatus('Mint submitted. Waiting for confirmation…');
+          const link = 'https://basescan.org/tx/' + txHash;
+          resultEl.innerHTML = 'Tx: <a class="link" href="' + link + '" target="_blank" rel="noopener">view on BaseScan</a>';
+
         }catch(err){
-          statusEl.textContent = 'Mint failed: ' + (err?.message || err);
+          console.error(err);
+          setStatus('Mint failed: ' + (err?.message || err));
+        }finally{
+          setBusy(false);
         }
       };
     }
@@ -313,6 +356,7 @@ app.get('/mini/app', (_req, res) => {
 </body>
 </html>`);
 });
+
 
 /* ===================== [EKLE] Mini App (web sayfası) ===================== */
 function renderMiniAppPage({ fid }) {
@@ -504,6 +548,7 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 
 

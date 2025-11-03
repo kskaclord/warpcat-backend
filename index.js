@@ -277,17 +277,39 @@ app.get('/mini/app', (req, res) => {
 <script type="module">
   import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';
 
-  const statusEl  = document.getElementById('status');
-  const resultEl  = document.getElementById('result');
-  const okDot     = document.getElementById('ok');
-  const mintBtn   = document.getElementById('mint');
-  const refreshBtn= document.getElementById('refresh');
+  const statusEl   = document.getElementById('status');
+  const resultEl   = document.getElementById('result');
+  const okDot      = document.getElementById('ok');
+  const mintBtn    = document.getElementById('mint');
+  const refreshBtn = document.getElementById('refresh');
 
   const qs  = new URLSearchParams(location.search);
   const fid = qs.get('fid') || '0';
 
-  function setStatus(t){ statusEl.textContent = t; }
-  function setBusy(b){ mintBtn.disabled = refreshBtn.disabled = b; }
+  const setStatus = (t) => statusEl.textContent = t;
+  const setBusy   = (b) => mintBtn.disabled = refreshBtn.disabled = b;
+
+  async function openWalletViaSdk(json) {
+    // Resmi yol
+    return await sdk.wallet.sendTransaction({
+      to:     json.params.to,
+      data:   json.params.data,
+      value:  json.params.value,    // hex (wei)
+      chainId: json.chainId         // "eip155:8453"
+    });
+  }
+
+  async function openWalletViaProvider(json) {
+    // Fallback (Neynar docs’taki EIP-1193 yaklaşımı)
+    const provider = sdk.wallet.getEthereumProvider();
+    const tx = { to: json.params.to, data: json.params.data, value: json.params.value };
+    // bazı sürümlerde method "eth_sendTransaction" olarak tek param ister
+    const hash = await provider.request({
+      method: 'eth_sendTransaction',
+      params: [tx]
+    });
+    return hash;
+  }
 
   async function main(){
     try {
@@ -296,7 +318,7 @@ app.get('/mini/app', (req, res) => {
       setStatus('Ready.');
     } catch(e){
       setStatus('Init error: ' + (e?.message || e));
-      console.error(e);
+      console.error('sdk.ready error', e);
       return;
     }
 
@@ -307,25 +329,26 @@ app.get('/mini/app', (req, res) => {
       try {
         setStatus('Preparing transaction…');
 
-        // 1) Backend’ten tx payload
+        // 1) backend’ten payload
         const resp = await fetch(`${location.origin}/mini/tx?fid=${encodeURIComponent(fid)}`, {
-          method: 'GET', headers: { 'accept': 'application/json', 'cache-control':'no-cache' }
+          method: 'GET',
+          headers: { 'accept':'application/json', 'cache-control':'no-cache' }
         });
         if (!resp.ok) throw new Error('Tx payload failed: ' + resp.status);
-        const json = await resp.json();  // { chainId, method, params:{to,data,value} }
+        const json = await resp.json(); // { chainId, method:"eth_sendTransaction", params:{...} }
 
-        // 2) (opsiyonel) bilgi amaçlı — adres yoksa da sorun değil
-        try { await sdk.wallet.getAddresses(); } catch {}
+        // 2) önce SDK ile deneriz
+        let txHash;
+        try {
+          setStatus('Opening wallet (SDK)…');
+          txHash = await openWalletViaSdk(json);
+        } catch (e1) {
+          console.warn('SDK sendTransaction failed, fallback to provider:', e1);
+          setStatus('Opening wallet (provider)…');
+          txHash = await openWalletViaProvider(json);
+        }
 
-        // 3) İşlemi Mini App SDK ile gönder
-        setStatus('Opening wallet…');
-        const txHash = await sdk.wallet.sendTransaction({
-          to:    json.params.to,
-          data:  json.params.data,
-          value: json.params.value,   // hex (wei)
-          chainId: json.chainId       // "eip155:8453"
-        });
-
+        // 3) başarı
         setStatus('Mint submitted. Waiting for confirmation…');
         resultEl.innerHTML =
           `Tx: <a class="link" target="_blank" rel="noopener" href="https://basescan.org/tx/${txHash}">view on BaseScan</a>`;
@@ -341,6 +364,7 @@ app.get('/mini/app', (req, res) => {
 
   main();
 </script>
+
 
 
 /* -------------------- Frame (Mint) — feed içi kart: JS yok, sadece meta -------------------- */
@@ -451,5 +475,6 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 

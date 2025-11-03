@@ -4,12 +4,47 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import { ethers } from "ethers";
 
 /* -------------------- Paths & App -------------------- */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
 const app = express();
+// ===== WarpCat Mint TX endpoint =====
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
+const MINT_PRICE_WEI   = process.env.MINT_PRICE_WEI || "5000000000000000"; // 0.005 ETH
+const PUBLIC_BASE_URL  = process.env.PUBLIC_BASE_URL || "https://warpcat.xyz";
+
+// keccak256("mint(uint256)") -> first 4 bytes = 0xa0712d68
+const MINT_SELECTOR = "0xa0712d68";
+
+app.get("/mini/tx", (req, res) => {
+  try {
+    const fidStr = String(req.query.fid || "0");
+    const fidBN  = ethers.toBigInt(fidStr);              // güvenli dönüşüm
+    const fidHex = fidBN.toString(16).padStart(64, "0");  // 32 byte pad
+    const data   = MINT_SELECTOR + fidHex;
+
+    const tx = {
+      chainId: "eip155:8453",
+      method: "eth_sendTransaction",
+      params: {
+        to: CONTRACT_ADDRESS,
+        data,
+        value: "0x" + BigInt(MINT_PRICE_WEI).toString(16)
+      }
+    };
+
+    res
+      .set({ "Content-Type": "application/json", "Cache-Control": "no-store" })
+      .status(200)
+      .send(JSON.stringify(tx));
+  } catch (e) {
+    res.status(400).json({ error: "bad_fid", details: String(e) });
+  }
+});
+
 app.set('trust proxy', true);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
@@ -206,6 +241,10 @@ function renderMiniFrame({ fid }) {
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="fc:frame" content="vNext"/>
+  <meta name="fc:frame:button:1" content="Mint"/>
+  <meta name="fc:frame:button:1:action" content="tx"/>
+  <meta name="fc:frame:button:1:target" content="${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(fid)}"/>
+
 
   <meta property="og:title" content="WarpCat Mint"/>
   <meta property="og:type" content="website"/>
@@ -341,3 +380,4 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+

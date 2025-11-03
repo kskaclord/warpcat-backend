@@ -450,16 +450,14 @@ function renderMintFrame({ fid }) {
   return `<!doctype html><html><head>
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
 <meta name="fc:frame" content="vNext"/>
-
 <meta property="og:title" content="WarpCat — Mint"/>
 <meta property="og:type" content="website"/>
 <meta property="og:url" content="${postUrl}"/>
 <meta property="og:image" content="${image}"/>
-<meta property="og:image:width" content="1024"/>
-<meta property="og:image:height" content="1024"/>
 <meta name="twitter:card" content="summary_large_image"/>
 <meta name="twitter:image" content="${image}"/>
 
+<!-- Frame bilgilerimiz -->
 <meta name="fc:frame:image" content="${image}"/>
 <meta name="fc:frame:image:aspect_ratio" content="1:1"/>
 
@@ -472,8 +470,10 @@ function renderMintFrame({ fid }) {
 
 <meta name="fc:frame:post_url" content="${postUrl}"/>
 <title>WarpCat Frame</title>
-</head><body style="margin:0;background:#000"></body></html>`;
+</head>
+<body style="margin:0;background:#000"></body></html>`;
 }
+
 
 async function handleMintFrame(req, res) {
   const fid = String(req.query.fid || req.body?.fid || '0');
@@ -556,6 +556,7 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 
 

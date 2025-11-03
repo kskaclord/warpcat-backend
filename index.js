@@ -190,45 +190,47 @@ app.get('/metadata/:fid.json', async (req, res) => {
 });
 
 /* -------------------- MINI APP FRAME -------------------- */
+/* -------------------- MINI APP FRAME -------------------- */
 function renderMiniFrame({ fid }) {
   const image   = `${PUBLIC_BASE_URL}/static/og.png`;
   const txUrl   = `${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(fid)}`;
   const postUrl = `${PUBLIC_BASE_URL}/mini/frame?fid=${encodeURIComponent(fid)}`;
 
   return `<!doctype html><html><head>
- <meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<meta name="fc:frame" content="vNext"/>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="fc:frame" content="vNext"/>
 
-<!-- Görsel -->
-<meta name="fc:frame:image" content="https://warpcat.xyz/static/og.png"/>
-<meta name="fc:frame:image:aspect_ratio" content="1:1"/>
+  <!-- Görsel -->
+  <meta name="fc:frame:image" content="${image}"/>
+  <meta name="fc:frame:image:aspect_ratio" content="1:1"/>
 
-<!-- Buton 1 = MINT (TX) -->
-<meta name="fc:frame:button:1" content="Mint"/>
-<meta name="fc:frame:button:1:action" content="tx"/>
-<meta name="fc:frame:button:1:target" content="https://warpcat.xyz/mini/tx?fid=${encodeURIComponent(fid)}"/>
+  <!-- Buton 1 = MINT -->
+  <meta name="fc:frame:button:1" content="Mint"/>
+  <meta name="fc:frame:button:1:action" content="tx"/>
+  <meta name="fc:frame:button:1:target" content="${txUrl}"/>
 
-<!-- Buton 2 = REFRESH (POST) -->
-<meta name="fc:frame:button:2" content="Refresh"/>
-<meta name="fc:frame:button:2:action" content="post"/>
+  <!-- Buton 2 = REFRESH -->
+  <meta name="fc:frame:button:2" content="Refresh"/>
+  <meta name="fc:frame:button:2:action" content="post"/>
 
-<!-- Frame POST URL -->
-<meta name="fc:frame:post_url" content="https://warpcat.xyz/mini/frame?fid=${encodeURIComponent(fid)}"/>
+  <!-- Frame POST URL -->
+  <meta name="fc:frame:post_url" content="${postUrl}"/>
 
-<!-- OG/Twitter opsiyonel -->
-<meta property="og:title" content="WarpCat Mint"/>
-<meta property="og:type" content="website"/>
-<meta property="og:url" content="https://warpcat.xyz/mini/frame?fid=${encodeURIComponent(fid)}"/>
-<meta property="og:image" content="https://warpcat.xyz/static/og.png"/>
-<meta property="og:image:width" content="1024"/>
-<meta property="og:image:height" content="1024"/>
-<meta name="twitter:card" content="summary_large_image"/>
-<meta name="twitter:image" content="https://warpcat.xyz/static/og.png"/>
+  <!-- OG meta -->
+  <meta property="og:title" content="WarpCat Mint"/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:url" content="${postUrl}"/>
+  <meta property="og:image" content="${image}"/>
+  <meta property="og:image:width" content="1024"/>
+  <meta property="og:image:height" content="1024"/>
+  <meta name="twitter:card" content="summary_large_image"/>
+  <meta name="twitter:image" content="${image}"/>
 
   <title>WarpCat Mini</title>
   <style>
-    html,body{margin:0;padding:0;background:#000;height:100%;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto}
+    html,body{margin:0;padding:0;background:#000;height:100%;color:#fff;
+      font-family:system-ui,-apple-system,Segoe UI,Roboto}
     .wrap{min-height:100%;display:grid;place-items:center}
     .card{text-align:center;opacity:.9}
     .card img{width:160px;height:160px;border-radius:24px}
@@ -246,17 +248,18 @@ function renderMiniFrame({ fid }) {
     </div>
   </div>
 
-  <!-- Mini App SDK: splash’i kapatmak için ready() -->
+  <!-- Mini App SDK: splash’i kapatmak için -->
   <script type="module">
     import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk';
     const onReady = async () => {
-      try { await sdk.actions.ready(); } catch(e) { /* ignore double-call */ }
+      try { await sdk.actions.ready(); } catch(e) { /* ignore */ }
     };
     if (document.readyState === 'complete') onReady();
     else window.addEventListener('load', onReady);
   </script>
 </body></html>`;
 }
+
 
 /* GET/POST — Mini frame endpoint */
 async function handleMiniFrame(req, res) {
@@ -339,4 +342,5 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 

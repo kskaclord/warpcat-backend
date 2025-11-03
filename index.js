@@ -27,11 +27,12 @@ const PUBLIC_BASE_URL =
   (process.env.PUBLIC_BASE_URL && process.env.PUBLIC_BASE_URL.replace(/\/$/, '')) ||
   `http://localhost:${PORT}`;
 
-const CHAIN_ID       = process.env.CHAIN_ID ? `eip155:${process.env.CHAIN_ID}` : 'eip155:8453';
+const CHAIN_ID_NUM   = process.env.CHAIN_ID ? Number(process.env.CHAIN_ID) : 8453; // base
+const CHAIN_ID       = `eip155:${CHAIN_ID_NUM}`;     // "eip155:8453"
 const CONTRACT_ADDR  = (process.env.CONTRACT_ADDRESS || '').toLowerCase();
 const MINT_PRICE_WEI = process.env.MINT_PRICE_WEI || '5000000000000000'; // 0.005 ETH default
 
-// Sende NEYNAR_APP_KEY var; ikisini de destekleyelim
+// sende NEYNAR_APP_KEY var; ikisini de destekleyelim
 const NEYNAR_API_KEY        = process.env.NEYNAR_API_KEY || process.env.NEYNAR_APP_KEY || '';
 const NEYNAR_WEBHOOK_SECRET = process.env.NEYNAR_WEBHOOK_SECRET || '';
 const NEYNAR_WEBHOOK_ID     = process.env.NEYNAR_WEBHOOK_ID || '';
@@ -101,7 +102,6 @@ app.get('/.well-known/farcaster.json', (_req, res) => {
     signature:"OexyLeUjG/iWJemqCMOgFObd8i3xwUUpaogl8eKtAoBS/mMy/2n1ZTYFICWojInbzCSkaSLLUD1/zB3e5Qiwwhw="
   };
 
-  // ÖNEMLİ: homeUrl artık /mini/launch
   const miniapp = {
     version: "1",
     name: "WarpCat",
@@ -186,7 +186,6 @@ app.get('/metadata/:fid.json', async (req, res) => {
 });
 
 /* -------------------- Launch Embed (Mini App) -------------------- */
-// (MEVCUT FONKSİYONU BU ŞEKLE GETİR)
 function renderLaunchEmbed() {
   const image = `${PUBLIC_BASE_URL}/static/og.png`;
   const frame = {
@@ -197,7 +196,7 @@ function renderLaunchEmbed() {
       action: {
         type: 'launch_frame',
         name: 'WarpCat',
-        url: `${PUBLIC_BASE_URL}/mini/app`,   // <— ÖNEMLİ: Artık web sayfamız
+        url: `${PUBLIC_BASE_URL}/mini/app`,   // Mini webview
         splashImageUrl: image,
         splashBackgroundColor: '#000000',
       },
@@ -221,18 +220,18 @@ function renderLaunchEmbed() {
 <body style="margin:0;background:#000;"></body>
 </html>`;
 }
-
 app.get('/mini/launch', (_req, res) => {
   res.status(200).set({
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-store, max-age=0',
   }).send(renderLaunchEmbed());
 });
-// ---- Mini App (webview) sayfası: /mini/app
-// == Mini App (webview) : /mini/app  ===================================
-// == Mini App (webview) : /mini/app  ===================================
-app.get('/mini/app', (_req, res) => {
+
+/* -------------------- Mini App (webview) : /mini/app -------------------- */
+app.get('/mini/app', (req, res) => {
   const image = `${PUBLIC_BASE_URL}/static/og.png`;
+  const fid = String(req.query.fid || '0');
+
   res.status(200).set({
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-store, max-age=0',
@@ -274,7 +273,7 @@ app.get('/mini/app', (_req, res) => {
     </div>
   </div>
 
-  <!-- ESM import (garanti): -->
+  <!-- SDK: ESM import -->
   <script type="module">
     import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';
 
@@ -285,15 +284,14 @@ app.get('/mini/app', (_req, res) => {
     const refreshBtn = document.getElementById('refresh');
 
     const qs = new URLSearchParams(location.search);
-    // composer/launch tarafında ?fid gelmeyebilir; 0 geçeriz (kontrat zaten FID'i arg olarak alıyor)
-    const fid = qs.get('fid') || '0';
+    const fid = qs.get('fid') || '${fid}';
 
-    function setStatus(t){ statusEl.textContent = t; }
-    function setBusy(b){ mintBtn.disabled = refreshBtn.disabled = b; }
+    const setStatus = (t) => statusEl.textContent = t;
+    const setBusy = (b) => { mintBtn.disabled = refreshBtn.disabled = b; };
 
     async function main(){
       try{
-        await sdk.actions.ready(); // “Ready not called” biter
+        await sdk.actions.ready(); // Splash kapansın
         okDot.style.background = '#0bd30b';
         setStatus('Ready.');
       }catch(e){
@@ -310,37 +308,52 @@ app.get('/mini/app', (_req, res) => {
         try{
           setStatus('Preparing transaction…');
 
-          // 1) Backend’den tx payload
+          // Backend’ten tx payload (to/data/value/chainspec)
           const resp = await fetch('${PUBLIC_BASE_URL}/mini/tx?fid=' + encodeURIComponent(fid), {
-            method: 'GET',
-            headers: { 'accept': 'application/json' }
+            method: 'GET', headers: { 'accept': 'application/json' }
           });
           if(!resp.ok){
             throw new Error('Tx payload failed: ' + resp.status);
           }
-          const json = await resp.json();
-          // { chainId:"eip155:8453", method:"eth_sendTransaction", params:{ to, data, value } }
+          const tx = await resp.json();
+          const { params } = tx || {};
+          const to    = params?.to;
+          const data  = params?.data;
+          const value = params?.value;
 
-          // 2) (opsiyonel) aktif adresi kontrol et
-          const addrs = await sdk.wallet.getAddresses().catch(() => []);
-          if(!addrs || addrs.length === 0){
-            // sendTransaction zaten cüzdan penceresi açacak; sadece bilgi verelim
-            console.log('No wallet yet; will request via sendTransaction');
+          // EIP-1193 provider
+          const provider = sdk.wallet.getEthereumProvider();
+          if(!provider) throw new Error('Farcaster wallet unavailable');
+
+          // Base’e geç (0x2105)
+          try {
+            await provider.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x2105' }] });
+          } catch (e) {
+            if (String(e?.code) === '4902') {
+              await provider.request({
+                method: 'wallet_addEthereumChain',
+                params: [{
+                  chainId: '0x2105',
+                  chainName: 'Base',
+                  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+                  rpcUrls: ['https://mainnet.base.org'],
+                  blockExplorerUrls: ['https://basescan.org'],
+                }],
+              });
+            } else {
+              throw e;
+            }
           }
 
-          // 3) İşlemi gönder
+          // İşlemi gönder
           setStatus('Opening wallet…');
-          const txHash = await sdk.wallet.sendTransaction({
-            to: json.params.to,
-            data: json.params.data,
-            value: json.params.value,   // hex string (wei)
-            chainId: json.chainId       // "eip155:8453"
+          const txHash = await provider.request({
+            method: 'eth_sendTransaction',
+            params: [{ to, data, value }],
           });
 
-          // 4) Başarı
-          setStatus('Mint submitted. Waiting for confirmation…');
-          const link = 'https://basescan.org/tx/' + txHash;
-          resultEl.innerHTML = 'Tx: <a class="link" href="' + link + '" target="_blank" rel="noopener">view on BaseScan</a>';
+          setStatus('Mint submitted.');
+          resultEl.innerHTML = 'Tx: <a class="link" href="https://basescan.org/tx/' + txHash + '" target="_blank" rel="noopener">view on BaseScan</a>';
 
         }catch(err){
           console.error(err);
@@ -357,91 +370,7 @@ app.get('/mini/app', (_req, res) => {
 </html>`);
 });
 
-
-/* ===================== [EKLE] Mini App (web sayfası) ===================== */
-function renderMiniAppPage({ fid }) {
-  const image = `${PUBLIC_BASE_URL}/static/og.png`;
-  const safeFid = String(fid || '0');
-  const txUrl = `${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(safeFid)}`;
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>WarpCat — Mint</title>
-<link rel="preload" as="image" href="${image}">
-<style>
-  :root { color-scheme: dark; }
-  body { margin:0; background:#000; color:#fff; font:16px/1.4 system-ui, -apple-system, Segoe UI, Roboto; }
-  .wrap { min-height:100dvh; display:grid; place-items:center; padding:24px; }
-  .card { width:100%; max-width:460px; border-radius:20px; background:#0b0b0b; border:1px solid #222; box-shadow:0 8px 40px rgba(0,0,0,.35); }
-  .hero { padding:28px 28px 0; text-align:center; }
-  .hero img { width:120px; height:120px; border-radius:16px; display:block; margin:0 auto 14px; }
-  .hero h1 { margin:6px 0 4px; font-size:22px; font-weight:700; letter-spacing:.2px; }
-  .hero p { margin:0; opacity:.75; font-size:13px; }
-  .body { padding:22px 24px 24px; }
-  .row { display:flex; gap:12px; }
-  .btn { flex:1; padding:14px 16px; font-weight:700; border-radius:14px; border:1px solid #2a2a2a; background:#1a1a1a; color:#fff; cursor:pointer; }
-  .btn:hover { background:#222; }
-  .btn.primary { background:linear-gradient(180deg, #3b82f6, #4338ca); border-color:#3b82f6; }
-  .note { margin-top:14px; font-size:12px; opacity:.7; text-align:center; }
-  .pill { display:inline-block; padding:4px 10px; border:1px solid #2a2a2a; border-radius:999px; font-size:12px; opacity:.9; }
-</style>
-<script type="module">
-  import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';
-  (async () => { try { await sdk.actions.ready(); } catch(e) { console.warn('ready() failed', e); } })();
-
-  function goMint() {
-    try {
-      const res = await fetch('${txUrl}', { method: 'GET', headers: { 'cache-control':'no-cache' } });
-      if (!res.ok) throw new Error('tx endpoint failed');
-      const tx = await res.json();
-      window.parent?.postMessage({ type: 'warp_sendTransaction', data: tx }, '*');
-    } catch (e) {
-      alert('Unable to start mint: ' + (e?.message || e));
-    }
-  }
- location.href = '${PUBLIC_BASE_URL}/frame/mint?fid=${encodeURIComponent(String(fid || "0"))}';
-  }
-  function doRefresh(){ location.reload(); }
-  window.__WC_APP__ = { goMint, doRefresh };
-</script>
-</head>
-<body>
-  <div class="wrap">
-    <div class="card">
-      <div class="hero">
-        <img src="${image}" alt="WarpCat"/>
-        <h1>WarpCat — Mint</h1>
-        <p>1 FID = 1 NFT · Base 🔵</p>
-        <p style="margin-top:8px"><span class="pill">FID: ${safeFid}</span></p>
-      </div>
-      <div class="body">
-        <div class="row">
-         <button class="btn primary" onclick="__WC_APP__.goMint()">✨ Mint</button>
-<button class="btn" onclick="__WC_APP__.doRefresh()">Refresh</button>
-
-        </div>
-        <div class="note">Your wallet will open in the mini window. Confirm to complete the mint.</div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
-}
-
-
-/* [EKLE] Mini App route */
-app.get('/mini/app', (req, res) => {
-  const fid = String(req.query.fid || '0');
-  res
-    .status(200)
-    .set({ 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store' })
-    .send(renderMiniAppPage({ fid }));
-});
-
-/* -------------------- Frame (Mint) -------------------- */
+/* -------------------- Frame (Mint) — feed içi kart: JS yok, sadece meta -------------------- */
 function renderMintFrame({ fid }) {
   const image   = `${PUBLIC_BASE_URL}/static/og.png`;
   const postUrl = `${PUBLIC_BASE_URL}/frame/mint?fid=${encodeURIComponent(fid)}`;
@@ -457,7 +386,6 @@ function renderMintFrame({ fid }) {
 <meta name="twitter:card" content="summary_large_image"/>
 <meta name="twitter:image" content="${image}"/>
 
-<!-- Frame bilgilerimiz -->
 <meta name="fc:frame:image" content="${image}"/>
 <meta name="fc:frame:image:aspect_ratio" content="1:1"/>
 
@@ -473,8 +401,6 @@ function renderMintFrame({ fid }) {
 </head>
 <body style="margin:0;background:#000"></body></html>`;
 }
-
-
 async function handleMintFrame(req, res) {
   const fid = String(req.query.fid || req.body?.fid || '0');
   if (req.method === 'POST') {
@@ -488,7 +414,6 @@ app.post('/frame/mint', handleMintFrame);
 
 /* -------------------- TX (Frames v2) -------------------- */
 async function handleTx(req, res) {
-  // (opsiyonel) POST doğrulaması
   if (req.method === 'POST') {
     const v = await validateWithNeynar(req.body || {});
     if (!v.ok) return res.status(401).json({ error: 'neynar_validation_failed' });
@@ -506,9 +431,9 @@ async function handleTx(req, res) {
     chainId: CHAIN_ID,             // "eip155:8453"
     method: 'eth_sendTransaction',
     params: {
-      to: CONTRACT_ADDR,           // env’den
+      to: CONTRACT_ADDR,           // env
       data: buildMintData(fid),    // 0xa0712d68 + fid
-      value: toHex(MINT_PRICE_WEI) // env’den
+      value: toHex(MINT_PRICE_WEI) // env
     },
   };
 
@@ -517,11 +442,8 @@ async function handleTx(req, res) {
     .set({ 'Cache-Control': 'no-store, max-age=0' })
     .json(tx);
 }
-
-// İKİ route da olsun:
 app.get('/mini/tx', handleTx);
 app.post('/mini/tx', handleTx);
-
 
 /* -------------------- Neynar Webhook -------------------- */
 app.post('/neynar/webhook', (req, res) => {
@@ -556,13 +478,3 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
-
-
-
-
-
-
-
-
-
-

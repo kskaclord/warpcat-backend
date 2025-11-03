@@ -230,6 +230,98 @@ app.get('/mini/launch', (_req, res) => {
     'Cache-Control': 'no-store, max-age=0',
   }).send(renderLaunchEmbed());
 });
+/* ===================== [EKLE] Mini App (web sayfası) ===================== */
+// Basit, şık bir sayfa: logo, FID göstergesi, Mint ve Refresh butonları.
+// İçeride sdk.actions.ready() çağrısı var; siyah ekran kalkar.
+function renderMiniAppPage({ fid }) {
+  const image = `${PUBLIC_BASE_URL}/static/og.png`;
+  const safeFid = String(fid || '0');
+  const txUrl = `${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(safeFid)}`;
+
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>WarpCat — Mini App</title>
+<link rel="preload" as="image" href="${image}">
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#000; color:#fff; font:16px/1.4 system-ui, -apple-system, Segoe UI, Roboto; }
+  .wrap { min-height:100dvh; display:grid; place-items:center; padding:24px; }
+  .card { width:100%; max-width:460px; border-radius:20px; background:#0b0b0b; border:1px solid #222; box-shadow:0 8px 40px rgba(0,0,0,.35); }
+  .hero { padding:28px 28px 0; text-align:center; }
+  .hero img { width:120px; height:120px; border-radius:16px; display:block; margin:0 auto 14px; }
+  .hero h1 { margin:6px 0 4px; font-size:22px; font-weight:700; letter-spacing:.2px; }
+  .hero p { margin:0; opacity:.75; font-size:13px; }
+  .body { padding:22px 24px 24px; }
+  .row { display:flex; gap:12px; }
+  .btn { flex:1; padding:14px 16px; font-weight:700; border-radius:14px; border:1px solid #2a2a2a; background:#1a1a1a; color:#fff; cursor:pointer; }
+  .btn:hover { background:#222; }
+  .btn.primary { background:linear-gradient(180deg, #3b82f6, #4338ca); border-color:#3b82f6; }
+  .note { margin-top:14px; font-size:12px; opacity:.7; text-align:center; }
+  .pill { display:inline-block; padding:4px 10px; border:1px solid #2a2a2a; border-radius:999px; font-size:12px; opacity:.9; }
+</style>
+<script type="module">
+  import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';
+
+  // Splash'ı kaldır
+  (async () => {
+    try { await sdk.actions.ready(); } catch(e) { console.warn('ready() failed', e); }
+  })();
+
+  async function doMint() {
+    try {
+      // backend'den tx payload al
+      const res = await fetch('${txUrl}', { method: 'GET', headers: { 'cache-control':'no-cache' } });
+      if (!res.ok) throw new Error('tx endpoint failed');
+      const tx = await res.json();
+
+      // Warpcast Mini App içinde transaction isteği (postMessage pattern)
+      // Warpcast bu formatı anlar (eth_sendTransaction).
+      window.parent?.postMessage({ type: 'warp_sendTransaction', data: tx }, '*');
+    } catch (e) {
+      alert('Mint başlatılamadı: ' + (e && e.message ? e.message : e));
+    }
+  }
+
+  function doRefresh() {
+    location.reload();
+  }
+
+  window.__WC_APP__ = { doMint, doRefresh };
+</script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="hero">
+        <img src="${image}" alt="WarpCat"/>
+        <h1>WarpCat — Mint</h1>
+        <p>1 FID = 1 NFT • Base 🔵</p>
+        <p style="margin-top:8px"><span class="pill">FID: ${safeFid}</span></p>
+      </div>
+      <div class="body">
+        <div class="row">
+          <button class="btn primary" onclick="__WC_APP__.doMint()">✨ Mint</button>
+          <button class="btn" onclick="__WC_APP__.doRefresh()">Refresh</button>
+        </div>
+        <div class="note">Cüzdan mini pencerede gözükür; onaylayınca mint tamamlanır.</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+/* [EKLE] Mini App route */
+app.get('/mini/app', (req, res) => {
+  const fid = String(req.query.fid || '0');
+  res
+    .status(200)
+    .set({ 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store' })
+    .send(renderMiniAppPage({ fid }));
+});
 
 /* -------------------- Frame (Mint) -------------------- */
 function renderMintFrame({ fid }) {
@@ -338,3 +430,4 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+

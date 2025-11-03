@@ -228,6 +228,91 @@ app.get('/mini/launch', (_req, res) => {
     'Cache-Control': 'no-store, max-age=0',
   }).send(renderLaunchEmbed());
 });
+// ---- Mini App (webview) sayfası: /mini/app
+app.get('/mini/app', (_req, res) => {
+  const image = `${PUBLIC_BASE_URL}/static/og.png`;
+  res
+    .status(200)
+    .set({
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store, max-age=0',
+    })
+    .send(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>WarpCat — Mini App</title>
+  <meta property="og:image" content="${image}"/>
+  <style>
+    html,body{margin:0;background:#000;color:#fff;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial}
+    .wrap{min-height:100dvh;display:grid;place-items:center;padding:24px}
+    .card{width:min(560px,90vw);background:#0b0b0b;border:1px solid #222;border-radius:16px;padding:24px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+    .btn{appearance:none;border:0;border-radius:12px;padding:14px 18px;font-weight:700;cursor:pointer}
+    .btn-primary{background:linear-gradient(90deg,#5b34ff,#8b5cf6);color:#fff}
+    .row{display:flex;gap:12px;justify-content:center;margin-top:16px;flex-wrap:wrap}
+    .muted{opacity:.7;font-size:13px;margin-top:12px}
+    img.logo{width:96px;height:96px;border-radius:20px;border:1px solid #222;background:#111}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <img class="logo" src="${image}" alt="WarpCat"/>
+      <h2 style="margin:16px 0 4px">WarpCat — Mint</h2>
+      <div style="opacity:.8;margin-bottom:12px">1 FID = 1 NFT • Base</div>
+
+      <div class="row">
+        <button id="mint" class="btn btn-primary">✨ Mint</button>
+        <button id="refresh" class="btn" style="background:#1a1a1a;color:#ddd">Refresh</button>
+      </div>
+
+      <div id="status" class="muted">Connecting…</div>
+    </div>
+  </div>
+
+  <!-- Farcaster Mini App SDK (UMD build) -->
+  <script src="https://unpkg.com/@farcaster/miniapp-sdk@0.2.1/dist/browser/index.umd.js"></script>
+  <script>
+    (async () => {
+      try {
+        // global: window.FarcasterMiniAppSdk
+        const sdk = window.FarcasterMiniAppSdk?.sdk;
+        if (!sdk) throw new Error('SDK not loaded');
+
+        // Bu ÇAĞRI uyarıyı kaldırır:
+        await sdk.actions.ready();
+
+        const statusEl = document.getElementById('status');
+        statusEl.textContent = 'Ready.';
+
+        // Refresh (= tekrar aç) – şimdilik sayfayı yenile
+        document.getElementById('refresh').onclick = () => location.reload();
+
+        // Mint – bir sonraki adımda cüzdan akışı bağlayacağız
+        document.getElementById('mint').onclick = async () => {
+          try {
+            statusEl.textContent = 'Opening wallet…';
+            // Geçici: Tx endpointini yeni sekmede göster (akışı doğruluyoruz)
+            window.open('${PUBLIC_BASE_URL}/mini/tx?fid=0', '_blank');
+
+            // Not: Sonraki adımda burada sdk ile gerçek 'eth_sendTransaction'
+            // çağrısını bağlayacağız (cüzdan onayıyla).
+          } catch (e) {
+            statusEl.textContent = 'Mint failed: ' + (e?.message || e);
+          }
+        };
+      } catch (e) {
+        const statusEl = document.getElementById('status');
+        statusEl.textContent = 'Init error: ' + (e?.message || e);
+        console.error(e);
+      }
+    })();
+  </script>
+</body>
+</html>`);
+});
+
 /* ===================== [EKLE] Mini App (web sayfası) ===================== */
 function renderMiniAppPage({ fid }) {
   const image = `${PUBLIC_BASE_URL}/static/og.png`;
@@ -418,6 +503,7 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 
 

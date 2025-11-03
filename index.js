@@ -186,10 +186,7 @@ app.get('/metadata/:fid.json', async (req, res) => {
 });
 
 /* -------------------- Launch Embed (Mini App) -------------------- */
-/**
- * /mini/launch → Mini App’ı açar (Open).
- * Embed Tool bu sayfayı “Embed Valid ✅” olarak görür.
- */
+// (MEVCUT FONKSİYONU BU ŞEKLE GETİR)
 function renderLaunchEmbed() {
   const image = `${PUBLIC_BASE_URL}/static/og.png`;
   const frame = {
@@ -200,7 +197,7 @@ function renderLaunchEmbed() {
       action: {
         type: 'launch_frame',
         name: 'WarpCat',
-        url: `${PUBLIC_BASE_URL}/frame/mint`, // mini app içinden mint frame’e de gidebilirsin
+        url: `${PUBLIC_BASE_URL}/mini/app`,   // <— ÖNEMLİ: Artık web sayfamız
         splashImageUrl: image,
         splashBackgroundColor: '#000000',
       },
@@ -224,6 +221,7 @@ function renderLaunchEmbed() {
 <body style="margin:0;background:#000;"></body>
 </html>`;
 }
+
 app.get('/mini/launch', (_req, res) => {
   res.status(200).set({
     'Content-Type': 'text/html; charset=utf-8',
@@ -430,4 +428,5 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 

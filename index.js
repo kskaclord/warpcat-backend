@@ -186,48 +186,124 @@ app.get('/metadata/:fid.json', async (req, res) => {
 });
 
 /* -------------------- Launch Embed (Mini App) -------------------- */
-function renderLaunchEmbed() {
-  const image = `${PUBLIC_BASE_URL}/static/og.png`;
-  const frame = {
-    version: 'next',
-    imageUrl: image,
-    button: {
-      title: 'Open',
-      action: {
-        type: 'launch_frame',
-        name: 'WarpCat',
-        url: `${PUBLIC_BASE_URL}/mini/app`,
-        splashImageUrl: image,
-        splashBackgroundColor: '#000000',
-      },
-    },
-  };
+/* ===================== Mini App (web sayfası) — SAFE (no inner backticks) ===================== */
+function renderMiniAppPage({ fid }) {
+  const image = `${PUBLIC_BASE_URL}/static/og.png`;   // bu dış JS, backtick OK
+  const safeFid = String(fid || '0');
+  const txUrl = `${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(safeFid)}`;
 
   return `<!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <meta property="og:title" content="WarpCat — Open Mini App"/>
-  <meta property="og:type" content="website"/>
-  <meta property="og:url" content="${PUBLIC_BASE_URL}/mini/launch"/>
+  <title>WarpCat — Mint</title>
   <meta property="og:image" content="${image}"/>
-  <meta property="og:image:width" content="1024"/>
-  <meta property="og:image:height" content="1024"/>
-  <meta name="twitter:card" content="summary_large_image"/>
-  <meta name="twitter:image" content="${image}"/>
-  <meta name="fc:frame" content='${JSON.stringify(frame)}'/>
-  <title>WarpCat Launch</title>
+  <style>
+    :root { color-scheme: dark; }
+    html,body{margin:0;background:#000;color:#fff;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial}
+    .wrap{min-height:100dvh;display:grid;place-items:center;padding:24px}
+    .card{width:min(560px,90vw);background:#0b0b0b;border:1px solid #222;border-radius:16px;padding:24px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+    .btn{appearance:none;border:0;border-radius:12px;padding:14px 18px;font-weight:700;cursor:pointer}
+    .btn-primary{background:linear-gradient(90deg,#5b34ff,#8b5cf6);color:#fff}
+    .row{display:flex;gap:12px;justify-content:center;margin-top:16px;flex-wrap:wrap}
+    .muted{opacity:.75;font-size:13px;margin-top:12px}
+    img.logo{width:96px;height:96px;border-radius:20px;border:1px solid #222;background:#111}
+    #ok{display:inline-block;width:8px;height:8px;border-radius:50%;background:#f00;vertical-align:middle;margin-left:6px}
+    a.link{color:#8ab4ff;text-decoration:none}
+  </style>
 </head>
-<body style="margin:0;background:#000;"></body>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <img class="logo" src="${image}" alt="WarpCat"/>
+      <h2 style="margin:16px 0 4px">WarpCat — Mint <span id="ok"></span></h2>
+      <div style="opacity:.8;margin-bottom:12px">1 FID = 1 NFT • Base</div>
+
+      <div class="row">
+        <button id="mint" class="btn btn-primary">✨ Mint</button>
+        <button id="refresh" class="btn" style="background:#1a1a1a;color:#ddd">Refresh</button>
+      </div>
+
+      <div id="status" class="muted">Loading…</div>
+      <div id="result" class="muted" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <!-- DİKKAT: İçeride backtick YOK; sadece tek/çift tırnak ve + ile concat -->
+  <script type="module">
+    import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';
+
+    const statusEl = document.getElementById('status');
+    const resultEl = document.getElementById('result');
+    const okDot    = document.getElementById('ok');
+    const mintBtn  = document.getElementById('mint');
+    const refreshBtn = document.getElementById('refresh');
+
+    function setStatus(t){ statusEl.textContent = t; }
+    function setBusy(b){ mintBtn.disabled = refreshBtn.disabled = b; }
+
+    async function main(){
+      try{
+        await sdk.actions.ready();      // Ready not called çözümü
+        okDot.style.background = '#0bd30b';
+        setStatus('Ready.');
+      }catch(e){
+        setStatus('Init error: ' + (e && e.message ? e.message : String(e)));
+        console.error(e);
+        return;
+      }
+
+      refreshBtn.onclick = function(){ location.reload(); };
+
+      mintBtn.onclick = async function () {
+        setBusy(true);
+        resultEl.textContent = '';
+        try{
+          setStatus('Preparing transaction…');
+
+          // 1) Backend’ten tx payload
+          const resp = await fetch('${txUrl}', { method: 'GET', headers: { 'accept': 'application/json', 'cache-control': 'no-cache' } });
+          if(!resp.ok){ throw new Error('Tx payload failed: ' + resp.status); }
+          const tx = await resp.json(); // { chainId, method, params }
+
+          // 2) Provider al
+          const provider = await sdk.wallet.getEthereumProvider();
+          if(!provider){
+            setStatus('Mint failed: Wallet provider missing');
+            return;
+          }
+
+          // 3) İşlemi gönder (EIP-1193)
+          setStatus('Opening wallet…');
+          const hash = await provider.request({ method: tx.method, params: [ tx.params ] });
+
+          // 4) Başarı linki
+          setStatus('Mint submitted. Waiting for confirmation…');
+          const link = 'https://basescan.org/tx/' + hash;
+          resultEl.innerHTML = 'Tx: <a class="link" href="' + link + '" target="_blank" rel="noopener">view on BaseScan</a>';
+        }catch(err){
+          console.error(err);
+          setStatus('Mint failed: ' + (err && err.message ? err.message : String(err)));
+        }finally{
+          setBusy(false);
+        }
+      };
+    }
+
+    main();
+  </script>
+</body>
 </html>`;
 }
 
-app.get('/mini/launch', (_req, res) => {
-  res.status(200).set({
-    'Content-Type': 'text/html; charset=utf-8',
-    'Cache-Control': 'no-store, max-age=0',
-  }).send(renderLaunchEmbed());
+/* Route (tek tane olsun) */
+app.get('/mini/app', (req, res) => {
+  const fid = String(req.query.fid || '0');
+  res
+    .status(200)
+    .set({ 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store' })
+    .send(renderMiniAppPage({ fid }));
 });
 
 
@@ -479,6 +555,7 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 
 

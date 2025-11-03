@@ -291,8 +291,8 @@ app.get('/mini/app', (_req, res) => {
 
   const qs  = new URLSearchParams(location.search);
   const fid = qs.get('fid') || '0';
-  const txUrl = `${location.origin}/mini/tx?fid=${encodeURIComponent(fid)}`;
-  const frameMintUrl = `${location.origin}/frame/mint?fid=${encodeURIComponent(fid)}`;
+  const txUrl = location.origin + '/mini/tx?fid=' + encodeURIComponent(fid);
+const frameMintUrl = location.origin + '/frame/mint?fid=' + encodeURIComponent(fid);
 
   function setStatus(t){ statusEl.textContent = t; }
   function setBusy(b){ mintBtn.disabled = refreshBtn.disabled = b; }
@@ -479,6 +479,7 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 
 

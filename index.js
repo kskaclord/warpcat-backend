@@ -227,15 +227,13 @@ app.get('/mini/launch', (_req, res) => {
   }).send(renderLaunchEmbed());
 });
 
-/* -------------------- Mini App (webview) : /mini/app -------------------- */
-app.get('/mini/app', (req, res) => {
+/* ===================== Mini App (webview) — /mini/app ===================== */
+function renderMiniAppPage({ fid }) {
   const image = `${PUBLIC_BASE_URL}/static/og.png`;
-  const fid = String(req.query.fid || '0');
+  const safeFid = String(fid || '0');
+  const txUrl = `${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(safeFid)}`;
 
-  res.status(200).set({
-    'Content-Type': 'text/html; charset=utf-8',
-    'Cache-Control': 'no-store, max-age=0',
-  }).send(`<!doctype html>
+  return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
@@ -273,97 +271,80 @@ app.get('/mini/app', (req, res) => {
     </div>
   </div>
 
-  <!-- SDK: ESM import -->
-<script type="module">
-  import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';
+  <script type="module">
+    import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';
 
-  const statusEl   = document.getElementById('status');
-  const resultEl   = document.getElementById('result');
-  const okDot      = document.getElementById('ok');
-  const mintBtn    = document.getElementById('mint');
-  const refreshBtn = document.getElementById('refresh');
+    const statusEl = document.getElementById('status');
+    const resultEl = document.getElementById('result');
+    const okDot = document.getElementById('ok');
+    const mintBtn = document.getElementById('mint');
+    const refreshBtn = document.getElementById('refresh');
 
-  const qs  = new URLSearchParams(location.search);
-  const fid = qs.get('fid') || '0';
+    function setStatus(t){ statusEl.textContent = t; }
+    function setBusy(b){ mintBtn.disabled = refreshBtn.disabled = b; }
 
-  const setStatus = (t) => statusEl.textContent = t;
-  const setBusy   = (b) => mintBtn.disabled = refreshBtn.disabled = b;
+    async function main(){
+      try{
+        await sdk.actions.ready();              // Ready not called sorunu gider
+        okDot.style.background = '#0bd30b';
+        setStatus('Ready.');
+      }catch(e){
+        setStatus('Init error: ' + (e?.message || e));
+        console.error(e);
+        return;
+      }
 
-  async function openWalletViaSdk(json) {
-    // Resmi yol
-    return await sdk.wallet.sendTransaction({
-      to:     json.params.to,
-      data:   json.params.data,
-      value:  json.params.value,    // hex (wei)
-      chainId: json.chainId         // "eip155:8453"
-    });
-  }
+      refreshBtn.onclick = () => location.reload();
 
-  async function openWalletViaProvider(json) {
-    // Fallback (Neynar docs’taki EIP-1193 yaklaşımı)
-    const provider = sdk.wallet.getEthereumProvider();
-    const tx = { to: json.params.to, data: json.params.data, value: json.params.value };
-    // bazı sürümlerde method "eth_sendTransaction" olarak tek param ister
-    const hash = await provider.request({
-      method: 'eth_sendTransaction',
-      params: [tx]
-    });
-    return hash;
-  }
+      mintBtn.onclick = async () => {
+        setBusy(true);
+        resultEl.textContent = '';
+        try{
+          setStatus('Preparing transaction…');
 
-  async function main(){
-    try {
-      await sdk.actions.ready();            // “Ready not called” biter
-      okDot.style.background = '#0bd30b';
-      setStatus('Ready.');
-    } catch(e){
-      setStatus('Init error: ' + (e?.message || e));
-      console.error('sdk.ready error', e);
-      return;
+          // 1) Backend’ten tx payload al
+          const resp = await fetch('${txUrl}', {
+            method: 'GET',
+            headers: { 'accept': 'application/json', 'cache-control':'no-cache' }
+          });
+          if(!resp.ok) throw new Error('Tx payload failed: ' + resp.status);
+          const json = await resp.json();   // { chainId, method, params:{to,data,value} }
+
+          // 2) İşlemi gönder — cüzdan penceresi mini-app içinde açılır
+          setStatus('Opening wallet…');
+          const txHash = await sdk.wallet.sendTransaction({
+            to: json.params.to,
+            data: json.params.data,
+            value: json.params.value,
+            chainId: json.chainId      // "eip155:8453"
+          });
+
+          setStatus('Mint submitted. Waiting for confirmation…');
+          const link = 'https://basescan.org/tx/' + txHash;
+          resultEl.innerHTML = 'Tx: <a class="link" href="' + link + '" target="_blank" rel="noopener">view on BaseScan</a>';
+        }catch(err){
+          console.error(err);
+          // provider.request is not a function vb. hatalar burada görünür
+          setStatus('Mint failed: ' + (err?.message || err));
+        }finally{
+          setBusy(false);
+        }
+      };
     }
 
-    refreshBtn.onclick = () => location.reload();
+    main();
+  </script>
+</body>
+</html>`;
+}
 
-    mintBtn.onclick = async () => {
-      setBusy(true); resultEl.textContent = '';
-      try {
-        setStatus('Preparing transaction…');
-
-        // 1) backend’ten payload
-        const resp = await fetch(`${location.origin}/mini/tx?fid=${encodeURIComponent(fid)}`, {
-          method: 'GET',
-          headers: { 'accept':'application/json', 'cache-control':'no-cache' }
-        });
-        if (!resp.ok) throw new Error('Tx payload failed: ' + resp.status);
-        const json = await resp.json(); // { chainId, method:"eth_sendTransaction", params:{...} }
-
-        // 2) önce SDK ile deneriz
-        let txHash;
-        try {
-          setStatus('Opening wallet (SDK)…');
-          txHash = await openWalletViaSdk(json);
-        } catch (e1) {
-          console.warn('SDK sendTransaction failed, fallback to provider:', e1);
-          setStatus('Opening wallet (provider)…');
-          txHash = await openWalletViaProvider(json);
-        }
-
-        // 3) başarı
-        setStatus('Mint submitted. Waiting for confirmation…');
-        resultEl.innerHTML =
-          `Tx: <a class="link" target="_blank" rel="noopener" href="https://basescan.org/tx/${txHash}">view on BaseScan</a>`;
-
-      } catch (err) {
-        console.error(err);
-        setStatus('Mint failed: ' + (err?.message || err));
-      } finally {
-        setBusy(false);
-      }
-    };
-  }
-
-  main();
-</script>
+app.get('/mini/app', (req, res) => {
+  const fid = String(req.query.fid || '0');
+  res
+    .status(200)
+    .set({ 'Content-Type':'text/html; charset=utf-8', 'Cache-Control':'no-store' })
+    .send(renderMiniAppPage({ fid }));
+});
 
 
 
@@ -475,6 +456,7 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 
 

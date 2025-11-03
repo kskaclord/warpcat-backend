@@ -36,10 +36,10 @@ const NEYNAR_WEBHOOK_SECRET = process.env.NEYNAR_WEBHOOK_SECRET || '';
 const NEYNAR_WEBHOOK_ID     = process.env.NEYNAR_WEBHOOK_ID || '';
 
 /* -------------------- Constants / Helpers -------------------- */
-// keccak256("mint(uint256)") first 4 bytes:
+// keccak256("mint(uint256)") -> 0xa0712d68
 const MINT_SELECTOR = '0xa0712d68';
 
-const toHex = (n) => (typeof n === 'string' && n.startsWith('0x')) ? n : ('0x' + BigInt(n).toString(16));
+const toHex      = (n) => (typeof n === 'string' && n.startsWith('0x')) ? n : ('0x' + BigInt(n).toString(16));
 const uint256Hex = (n) => ('0x' + BigInt(n).toString(16).padStart(64, '0'));
 
 function buildMintData(fidStr) {
@@ -73,7 +73,6 @@ async function validateWithNeynar(payload) {
 /* -------------------- Static -------------------- */
 const STATIC_DIR = path.join(__dirname, 'static');
 
-// /static – genel statikler
 if (fs.existsSync(STATIC_DIR)) {
   app.use('/static', express.static(STATIC_DIR, {
     setHeaders(res, filePath) {
@@ -87,7 +86,7 @@ if (fs.existsSync(STATIC_DIR)) {
   }));
 }
 
-/* /.well-known/farcaster.json – DİNAMİK (manifest + domain association) */
+/* /.well-known/farcaster.json – DİNAMİK manifest */
 app.get('/.well-known/farcaster.json', (_req, res) => {
   res.set({
     'Content-Type': 'application/json; charset=utf-8',
@@ -110,13 +109,16 @@ app.get('/.well-known/farcaster.json', (_req, res) => {
     homeUrl: `${PUBLIC_BASE_URL}/mini/frame`,
     splashImageUrl: `${PUBLIC_BASE_URL}/static/og.png`,
     splashBackgroundColor: "#000000",
-    splashTextColor: "#ffffff"
+    splashTextColor: "#ffffff",
+    // Cast paylaşırken kullanacağımız launch URL (Embed Tool da bunu doğrular)
+    castShareUrl: `${PUBLIC_BASE_URL}/mini/launch`,
+    ogTitle: "WarpCat — Mini App",
+    ogImageUrl: `${PUBLIC_BASE_URL}/static/og.png`,
   };
 
   res.send(JSON.stringify({ accountAssociation, miniapp }, null, 2));
 });
 
-// /.well-known klasörünü (varsa) statik ver (opsiyonel)
 const WELL_KNOWN_DIR = path.join(STATIC_DIR, '.well-known');
 if (fs.existsSync(WELL_KNOWN_DIR)) {
   app.use('/.well-known', express.static(WELL_KNOWN_DIR, {
@@ -163,13 +165,10 @@ app.get('/metadata/:fid.json', async (req, res) => {
       ],
     };
 
-    res
-      .status(200)
-      .set({
-        'Content-Type': 'application/json; charset=utf-8',
-        'Cache-Control': 'public, max-age=60',
-      })
-      .send(JSON.stringify(metadata, null, 2));
+    res.status(200).set({
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'public, max-age=60',
+    }).send(JSON.stringify(metadata, null, 2));
   } catch (err) {
     console.error('metadata error', err);
     const metadata = {
@@ -179,63 +178,98 @@ app.get('/metadata/:fid.json', async (req, res) => {
       external_url: `${PUBLIC_BASE_URL}`,
       attributes: [{ trait_type: 'FID', value: fid }],
     };
-    res
-      .status(200)
-      .set({
-        'Content-Type': 'application/json; charset=utf-8',
-        'Cache-Control': 'public, max-age=60',
-      })
-      .send(JSON.stringify(metadata, null, 2));
+    res.status(200).set({
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'public, max-age=60',
+    }).send(JSON.stringify(metadata, null, 2));
   }
 });
 
-/* -------------------- MINI APP FRAME -------------------- */
+/* -------------------- LAUNCH EMBED (for Composer & Embed Tool) -------------------- */
 /**
- * Bu endpoint sadece FRAME meta'ları döner.
- * Warpcast bu meta'lara göre Mint butonunu ÇİZER.
+ * /mini/launch → cast içine yapıştıracağın link.
+ * Burada tek bir JSON meta bulunur: fc:frame = { version:"next", button:{ action:"launch_frame", ... } }
+ * Embed Tool bu sayfayı "Embed Valid ✅" yapar.
  */
-function renderMiniFrame({ fid }) {
-  const image   = `${PUBLIC_BASE_URL}/static/og.png`;
-  const postUrl = `${PUBLIC_BASE_URL}/mini/frame?fid=${encodeURIComponent(fid)}`;
-  const txUrl   = `${PUBLIC_BASE_URL}/mini/tx?fid=${encodeURIComponent(fid)}`;
+function renderLaunchEmbed() {
+  const image = `${PUBLIC_BASE_URL}/static/og.png`;
+  const frame = {
+    version: 'next',
+    imageUrl: image,
+    button: {
+      title: 'Open',
+      action: {
+        type: 'launch_frame',
+        name: 'WarpCat',
+        url: `${PUBLIC_BASE_URL}/mini/frame`,
+        splashImageUrl: image,
+        splashBackgroundColor: '#000000',
+      },
+    },
+  };
 
   return `<!doctype html><html><head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<meta name="fc:frame" content="vNext"/>
+<meta property="og:title" content="WarpCat — Open Mini App"/>
+<meta property="og:type" content="website"/>
+<meta property="og:url" content="${PUBLIC_BASE_URL}/mini/launch"/>
+<meta property="og:image" content="${image}"/>
+<meta property="og:image:width" content="1024"/>
+<meta property="og:image:height" content="1024"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:image" content="${image}"/>
+<meta name="fc:frame" content='${JSON.stringify(frame)}'/>
+<title>WarpCat Launch</title>
+</head>
+<body style="margin:0;background:#000;"></body>
+</html>`;
+}
 
-<!-- OpenGraph/Twitter -->
+app.get('/mini/launch', (_req, res) => {
+  res.status(200).set({
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store, max-age=0',
+  }).send(renderLaunchEmbed());
+});
+
+/* -------------------- MINI APP FRAME (Mint UI drawn by JSON vNext) -------------------- */
+function renderMiniFrame({ fid }) {
+  const image   = `${PUBLIC_BASE_URL}/static/og.png`;
+  const postUrl = `${PUBLIC_BASE_URL}/mini/frame`;
+  const txUrl   = `${PUBLIC_BASE_URL}/mini/tx`; // fid POST ile gelecek
+
+  const frame = {
+    version: 'next',
+    imageUrl: image,
+    buttons: [
+      { title: 'Mint',    action: { type: 'tx',   target: txUrl } },
+      { title: 'Refresh', action: { type: 'post'} },
+    ],
+    postUrl: postUrl,
+  };
+
+  return `<!doctype html><html><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
 <meta property="og:title" content="WarpCat — Mint"/>
 <meta property="og:type" content="website"/>
-<meta property="og:url" content="${postUrl}"/>
+<meta property="og:url" content="${PUBLIC_BASE_URL}/mini/frame?fid=${encodeURIComponent(fid)}"/>
 <meta property="og:image" content="${image}"/>
 <meta property="og:image:width" content="1024"/>
 <meta property="og:image:height" content="1024"/>
 <meta name="twitter:card" content="summary_large_image"/>
 <meta name="twitter:image" content="${image}"/>
 
-<!-- FRAME UI -->
-<meta name="fc:frame:image" content="${image}"/>
-<meta name="fc:frame:image:aspect_ratio" content="1:1"/>
-
-<meta name="fc:frame:button:1" content="Mint"/>
-<meta name="fc:frame:button:1:action" content="tx"/>
-<meta name="fc:frame:button:1:target" content="${txUrl}"/>
-
-<meta name="fc:frame:button:2" content="Refresh"/>
-<meta name="fc:frame:button:2:action" content="post"/>
-
-<meta name="fc:frame:post_url" content="${postUrl}"/>
-
+<!-- Yeni JSON vNext frame -->
+<meta name="fc:frame" content='${JSON.stringify(frame)}'/>
 <title>WarpCat Mini</title>
 </head>
 <body style="margin:0;background:#000;">
-  <!-- Splash'ın kalmaması için ready() -->
+  <!-- Splash'ı kapat -->
   <script type="module">
     import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk';
-    const callReady = async () => { try { await sdk.actions.ready(); } catch (_) {} };
-    if (document.readyState === 'complete') callReady();
-    else window.addEventListener('load', callReady);
+    (async () => { try { await sdk.actions.ready(); } catch (e) {} })();
   </script>
 </body>
 </html>`;
@@ -243,26 +277,22 @@ function renderMiniFrame({ fid }) {
 
 /* GET/POST — Mini frame endpoint */
 async function handleMiniFrame(req, res) {
-  const fid =
-    String(req.query.fid || (req.body && (req.body.fid || req.body?.untrustedData?.fid)) || '0');
+  const fid = String(
+    req.query.fid ||
+    req.body?.fid ||
+    req.body?.untrustedData?.fid || '0'
+  );
 
   if (req.method === 'POST') {
     const v = await validateWithNeynar(req.body || {});
-    if (!v.ok) {
-      return res.status(401).json({ error: 'neynar_validation_failed' });
-    }
+    if (!v.ok) return res.status(401).json({ error: 'neynar_validation_failed' });
   }
 
   const html = renderMiniFrame({ fid });
-  res
-    .status(200)
-    .set({
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'no-store, max-age=0',
-    })
-    .send(html);
+  res.status(200)
+     .set({'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store, max-age=0'})
+     .send(html);
 }
-
 app.get('/mini/frame', handleMiniFrame);
 app.post('/mini/frame', handleMiniFrame);
 
@@ -272,14 +302,16 @@ async function handleTx(req, res) {
     const v = await validateWithNeynar(req.body || {});
     if (!v.ok) return res.status(401).json({ error: 'neynar_validation_failed' });
   }
+  if (!CONTRACT_ADDR) return res.status(500).json({ error: 'CONTRACT_ADDRESS missing' });
 
-  if (!CONTRACT_ADDR) {
-    return res.status(500).json({ error: 'CONTRACT_ADDRESS missing' });
-  }
+  const fid = String(
+    req.query.fid ||
+    req.body?.fid ||
+    req.body?.untrustedData?.fid || '0'
+  );
 
-  const fid = String(req.query.fid || req.body?.fid || '0');
   const tx = {
-    chainId: CHAIN_ID,                 // e.g., eip155:8453
+    chainId: CHAIN_ID,
     method: 'eth_sendTransaction',
     params: {
       to: CONTRACT_ADDR,
@@ -288,10 +320,7 @@ async function handleTx(req, res) {
     },
   };
 
-  res
-    .status(200)
-    .set({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store, max-age=0' })
-    .send(JSON.stringify(tx));
+  res.status(200).set({ 'Cache-Control': 'no-store, max-age=0' }).json(tx);
 }
 app.get('/mini/tx', handleTx);
 app.post('/mini/tx', handleTx);
@@ -303,11 +332,7 @@ app.post('/neynar/webhook', (req, res) => {
     const signature = req.headers['x-neynar-signature'];
 
     if (NEYNAR_WEBHOOK_SECRET) {
-      const expected = crypto
-        .createHmac('sha256', NEYNAR_WEBHOOK_SECRET)
-        .update(bodyStr)
-        .digest('hex');
-
+      const expected = crypto.createHmac('sha256', NEYNAR_WEBHOOK_SECRET).update(bodyStr).digest('hex');
       if (signature !== expected) {
         console.warn('[NEYNAR WEBHOOK] ❌ invalid signature');
         return res.status(401).json({ ok: false, error: 'invalid_signature' });
@@ -326,7 +351,7 @@ app.post('/neynar/webhook', (req, res) => {
 });
 
 /* -------------------- Health & root -------------------- */
-app.get('/', (_req, res) => res.redirect(302, '/mini/frame?fid=12345'));
+app.get('/', (_req, res) => res.redirect(302, '/mini/launch'));
 app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
 /* -------------------- Start -------------------- */

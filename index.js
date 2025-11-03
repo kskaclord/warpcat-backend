@@ -262,7 +262,7 @@ function renderMiniAppPage({ fid }) {
   import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';
   (async () => { try { await sdk.actions.ready(); } catch(e) { console.warn('ready() failed', e); } })();
 
-  async function doMint() {
+  function goMint() {
     try {
       const res = await fetch('${txUrl}', { method: 'GET', headers: { 'cache-control':'no-cache' } });
       if (!res.ok) throw new Error('tx endpoint failed');
@@ -272,8 +272,10 @@ function renderMiniAppPage({ fid }) {
       alert('Unable to start mint: ' + (e?.message || e));
     }
   }
+ location.href = '${PUBLIC_BASE_URL}/frame/mint?fid=${encodeURIComponent(String(fid || "0"))}';
+  }
   function doRefresh(){ location.reload(); }
-  window.__WC_APP__ = { doMint, doRefresh };
+  window.__WC_APP__ = { goMint, doRefresh };
 </script>
 </head>
 <body>
@@ -287,8 +289,9 @@ function renderMiniAppPage({ fid }) {
       </div>
       <div class="body">
         <div class="row">
-          <button class="btn primary" onclick="__WC_APP__.doMint()">✨ Mint</button>
-          <button class="btn" onclick="__WC_APP__.doRefresh()">Refresh</button>
+         <button class="btn primary" onclick="__WC_APP__.goMint()">✨ Mint</button>
+<button class="btn" onclick="__WC_APP__.doRefresh()">Refresh</button>
+
         </div>
         <div class="note">Your wallet will open in the mini window. Confirm to complete the mint.</div>
       </div>
@@ -415,6 +418,7 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 
 

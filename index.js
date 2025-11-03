@@ -492,7 +492,10 @@ async function handleTx(req, res) {
     const v = await validateWithNeynar(req.body || {});
     if (!v.ok) return res.status(401).json({ error: 'neynar_validation_failed' });
   }
-  if (!CONTRACT_ADDR) return res.status(500).json({ error: 'CONTRACT_ADDRESS missing' });
+
+  if (!CONTRACT_ADDR) {
+    return res.status(500).json({ error: 'CONTRACT_ADDRESS missing' });
+  }
 
   const fid = String(
     req.query.fid ||
@@ -500,20 +503,28 @@ async function handleTx(req, res) {
     req.body?.untrustedData?.fid || '0'
   );
 
-  const tx = {
-    chainId: CHAIN_ID,
-    method: 'eth_sendTransaction',
-    params: {
-      to: CONTRACT_ADDR,
-      data: buildMintData(fid),
-      value: toHex(MINT_PRICE_WEI),
-    },
+  // tx objesini ÖNCE oluştur, logla:
+  const txObject = {
+    to: CONTRACT_ADDR,
+    data: buildMintData(fid),
+    value: toHex(MINT_PRICE_WEI), // "0x…" formatında
   };
 
-  res.status(200).set({ 'Cache-Control': 'no-store, max-age=0' }).json(tx);
+  // Render/warpcast bazen params'ı DİZİ bekliyor. Obje değil:
+  const payload = {
+    chainId: CHAIN_ID,                  // örn: "eip155:8453"
+    method: 'eth_sendTransaction',
+    params: [ txObject ],               // <— DİKKAT: DİZİ!
+  };
+
+  console.log('[TX] fid=%s -> %j', fid, payload);
+
+  res.status(200).set({
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store, max-age=0',
+  }).send(JSON.stringify(payload));
 }
-app.get('/mini/tx', handleTx);
-app.post('/mini/tx', handleTx);
+
 
 /* -------------------- Neynar Webhook -------------------- */
 app.post('/neynar/webhook', (req, res) => {
@@ -548,6 +559,7 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 
 
 

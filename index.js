@@ -13,6 +13,23 @@ const app = express();
 app.set('trust proxy', true);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+// Warpcast / Farcaster içinden embed'e izin ver + popup'lara izin ver
+app.use((req, res, next) => {
+  // Bazı proxy’ler XFO ekleyebiliyor; temizle
+  res.removeHeader('X-Frame-Options');
+
+  // Warpcast ve Farcaster domainlerinden çerçevelemeye izin ver
+  res.setHeader(
+    'Content-Security-Policy',
+    "frame-ancestors 'self' https://*.warpcast.com https://*.farcaster.xyz"
+  );
+
+  // Cüzdan açılır pencereleri için gerekli
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+
+  next();
+});
+
 
 /* -------------------- Embed/CSP fix -------------------- */
 // Warpcast/Farcaster içinde açılabilsin
@@ -225,7 +242,6 @@ app.get('/mini/frame', (_req, res) => {
   }).send(renderLaunchEmbed());
 });
 
-/* -------------------- Mini App (webview) — /mini/app -------------------- */
 // -------------------- Mini App (webview) — /mini/app --------------------
 function renderMiniAppPage(opts) {
   const fid = String((opts && opts.fid) || '0');
@@ -233,6 +249,14 @@ function renderMiniAppPage(opts) {
   const txUrl = PUBLIC_BASE_URL + '/mini/tx?fid=' + encodeURIComponent(fid);
   const frameMintUrl = PUBLIC_BASE_URL + '/frame/mint?fid=' + encodeURIComponent(fid);
 
+  <script type="module">
+  import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';
+  (async () => {
+    try { await sdk.actions.ready(); }
+    catch (e) { console.warn('early ready failed', e); }
+  })();
+</script>
+  
   return '<!doctype html>'
     + '<html lang="en"><head>'
     + '<meta charset="utf-8"/>'
@@ -442,4 +466,5 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 

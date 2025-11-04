@@ -261,6 +261,16 @@ function renderMiniAppPage(opts) {
     + '<div id="status" class="muted">Loading…</div>'
     + '<div id="result" class="muted" style="margin-top:8px"></div>'
     + '</div></div>'
+    +  // ---- EARLY READY (splash’ı hemen kapat) ----
++  + '<script>' 
++  + '(async function(){'
++  + '  try{'
++  + "    const m = await import(\"https://esm.sh/@farcaster/miniapp-sdk@0.2.1\");"
++  + '    await m.sdk.actions.ready();'
++  + '  }catch(e){}'
++  + '})();'
++  + '</' + 'script>'
+
     + '<script type="module">'
       // libs
       + "import { createConfig, connect, getAccount, sendTransaction } from 'https://esm.sh/@wagmi/core@2.13.4';"
@@ -444,3 +454,4 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+

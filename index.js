@@ -263,64 +263,81 @@ function renderMiniAppPage(opts) {
     + '<div id="status" class="muted">Loading…</div>'
     + '<div id="result" class="muted" style="margin-top:8px"></div>'
     + '</div></div>'
-    + '<script type="module">'
-      + "import { createConfig, connect, getAccount, sendTransaction } from 'https://esm.sh/@wagmi/core@2.13.4';"
-      + "import { http } from 'https://esm.sh/viem@2.13.7';"
-      + "import { base } from 'https://esm.sh/viem@2.13.7/chains';"
-      + "import { FarcasterMiniAppConnector } from 'https://esm.sh/@farcaster/miniapp-wagmi-connector@0.1.7';"
-      + "import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';"
+    <script type="module">
+  import { createConfig, connect, getAccount, sendTransaction } from 'https://esm.sh/@wagmi/core@2.13.4';
+  import { http } from 'https://esm.sh/viem@2.13.7';
+  import { base } from 'https://esm.sh/viem@2.13.7/chains';
+  import { FarcasterMiniAppConnector } from 'https://esm.sh/@farcaster/miniapp-wagmi-connector@0.1.7';
+  import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';
 
-      + "const statusEl=document.getElementById('status');"
-      + "const resultEl=document.getElementById('result');"
-      + "const okDot=document.getElementById('ok');"
-      + "const mintBtn=document.getElementById('mint');"
-      + "const refreshBtn=document.getElementById('refresh');"
+  const statusEl = document.getElementById('status');
+  const resultEl = document.getElementById('result');
+  const okDot = document.getElementById('ok');
+  const mintBtn = document.getElementById('mint');
+  const refreshBtn = document.getElementById('refresh');
 
-      + "function setStatus(t){statusEl.textContent=t;}"
-      + "function setBusy(b){mintBtn.disabled=refreshBtn.disabled=b;}"
+  function setStatus(t) { statusEl.textContent = t; }
+  function setBusy(b) { mintBtn.disabled = refreshBtn.disabled = b; }
 
-      + "const fcConnector=new FarcasterMiniAppConnector({ chains:[base] });"
-      + "const config=createConfig({ chains:[base], transports:{[base.id]:http()}, connectors:[fcConnector] });"
+  const fcConnector = new FarcasterMiniAppConnector({ chains: [base] });
+  const config = createConfig({
+    chains: [base],
+    transports: { [base.id]: http() },
+    connectors: [fcConnector]
+  });
 
-      + "async function init(){"
-        // Ready — burada EN BAŞTA
-        + "try{ await sdk.actions.ready(); okDot.style.background='#0bd30b'; setStatus('Ready.'); }"
-        + "catch(e){ console.warn('sdk.ready error:', e); setStatus('Ready.'); }"
+  // ✅ ready() çağrısını garantiye alıyoruz
+  window.addEventListener('load', async () => {
+    try {
+      await sdk.actions.ready();
+      okDot.style.background = '#0bd30b';
+      setStatus('Ready.');
+    } catch (e) {
+      console.warn('sdk.ready error:', e);
+      setStatus('Failed to init Mini App');
+    }
 
-        + "refreshBtn.onclick=function(){location.reload();};"
+    refreshBtn.onclick = function () { location.reload(); };
 
-        + "mintBtn.onclick=async function(){"
-          + "setBusy(true); resultEl.textContent='';"
-          + "try{"
-            + "const r=await fetch('" + txUrl + "',{headers:{'accept':'application/json','cache-control':'no-cache'}});"
-            + "if(!r.ok) throw new Error('Tx payload failed: '+r.status);"
-            + "const tx=await r.json();"
-            + "let acc=getAccount(config);"
-            + "if(!acc.isConnected){ await connect(config,{ connector: fcConnector }); acc=getAccount(config); }"
-            + "if(!acc.isConnected) throw new Error('Wallet provider missing');"
-            + "const chainIdNum=Number(String(tx.chainId).split(':').pop()||" + CHAIN_ID_NUM + ");"
-            + "setStatus('Opening wallet…');"
-            + "const hash=await sendTransaction(config,{ chainId: chainIdNum, to: tx.params.to, data: tx.params.data, value: BigInt(tx.params.value) });"
-            + "setStatus('Mint submitted. Waiting for confirmation…');"
-            + "var link='https://basescan.org/tx/'+hash;"
-            + "resultEl.innerHTML='Tx: <a class=\"link\" href=\"'+link+'\" target=\"_blank\" rel=\"noopener\">view on BaseScan</a>';"
-          + "}"
-          + "catch(err){"
-            + "console.error(err);"
-            + "if(String((err&&err.message)||err).toLowerCase().includes('wallet provider')){"
-              + "setStatus('No wallet in this preview. Opening Frame mint…');"
-              + "try{ await sdk.actions.openUrl('" + frameMintUrl + "'); }catch(_e){ location.href='" + frameMintUrl + "'; }"
-            + "}else{"
-              + "setStatus('Mint failed: '+(err&&err.message?err.message:String(err)));"
-            + "}"
-          + "}"
-          + "finally{ setBusy(false); }"
-        + "};"
-      + "}"
-      + "init();"
-    + '</script>'
-    + '</body></html>';
-}
+    mintBtn.onclick = async function () {
+      setBusy(true);
+      resultEl.textContent = '';
+      try {
+        const r = await fetch('{{txUrl}}', { headers: { 'accept': 'application/json', 'cache-control': 'no-cache' } });
+        if (!r.ok) throw new Error('Tx payload failed: ' + r.status);
+        const tx = await r.json();
+        let acc = getAccount(config);
+        if (!acc.isConnected) {
+          await connect(config, { connector: fcConnector });
+          acc = getAccount(config);
+        }
+        if (!acc.isConnected) throw new Error('Wallet provider missing');
+        const chainIdNum = Number(String(tx.chainId).split(':').pop() || {{CHAIN_ID_NUM}});
+        setStatus('Opening wallet…');
+        const hash = await sendTransaction(config, {
+          chainId: chainIdNum,
+          to: tx.params.to,
+          data: tx.params.data,
+          value: BigInt(tx.params.value)
+        });
+        setStatus('Mint submitted. Waiting for confirmation…');
+        const link = 'https://basescan.org/tx/' + hash;
+        resultEl.innerHTML = 'Tx: <a class="link" href="' + link + '" target="_blank" rel="noopener">view on BaseScan</a>';
+      } catch (err) {
+        console.error(err);
+        if (String(err?.message || err).toLowerCase().includes('wallet provider')) {
+          setStatus('No wallet in this preview. Opening Frame mint…');
+          try { await sdk.actions.openUrl('{{frameMintUrl}}'); } catch (_e) { location.href = '{{frameMintUrl}}'; }
+        } else {
+          setStatus('Mint failed: ' + (err?.message || String(err)));
+        }
+      } finally {
+        setBusy(false);
+      }
+    };
+  });
+</script>
+
 app.get('/mini/app', (req, res) => {
   const fid = String(req.query.fid || '0');
   res.status(200).set({
@@ -428,3 +445,4 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+

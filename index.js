@@ -14,22 +14,6 @@ app.set('trust proxy', true);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-/* -------------------- Allow Warpcast to embed + popups -------------------- */
-app.use((req, res, next) => {
-  // Bazı platformlar XFO ekliyor; temizleyelim
-  res.removeHeader('X-Frame-Options');
-
-  // Warpcast/Farcaster içinden iframe'e izin ver
-  res.setHeader(
-    'Content-Security-Policy',
-    "frame-ancestors 'self' https://*.warpcast.com https://*.farcaster.xyz"
-  );
-
-  // Cüzdan açılır pencereleri için gerekli
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
-  next();
-});
-
 /* -------------------- Logging -------------------- */
 app.use((req, _res, next) => {
   const ua = req.headers['user-agent'] || '';
@@ -41,14 +25,13 @@ app.use((req, _res, next) => {
 const PORT = Number(process.env.PORT || 8080);
 const PUBLIC_BASE_URL =
   (process.env.PUBLIC_BASE_URL && process.env.PUBLIC_BASE_URL.replace(/\/$/, '')) ||
-  `http://localhost:${PORT}`;
+  ('http://localhost:' + PORT);
 
-const CHAIN_ID_NUM   = process.env.CHAIN_ID ? Number(process.env.CHAIN_ID) : 8453; // Base
-const CHAIN_ID       = `eip155:${CHAIN_ID_NUM}`;
+const CHAIN_ID_NUM   = process.env.CHAIN_ID ? Number(process.env.CHAIN_ID) : 8453; // base
+const CHAIN_ID       = 'eip155:' + CHAIN_ID_NUM;
 const CONTRACT_ADDR  = (process.env.CONTRACT_ADDRESS || '').toLowerCase();
-const MINT_PRICE_WEI = process.env.MINT_PRICE_WEI || '5000000000000000'; // 0.005 ETH default
+const MINT_PRICE_WEI = process.env.MINT_PRICE_WEI || '5000000000000000'; // 0.005
 
-// Neynar anahtarları
 const NEYNAR_API_KEY        = process.env.NEYNAR_API_KEY || process.env.NEYNAR_APP_KEY || '';
 const NEYNAR_WEBHOOK_SECRET = process.env.NEYNAR_WEBHOOK_SECRET || '';
 const NEYNAR_WEBHOOK_ID     = process.env.NEYNAR_WEBHOOK_ID || '';
@@ -56,7 +39,6 @@ const NEYNAR_WEBHOOK_ID     = process.env.NEYNAR_WEBHOOK_ID || '';
 /* -------------------- Helpers -------------------- */
 // keccak256("mint(uint256)") -> 0xa0712d68
 const MINT_SELECTOR = '0xa0712d68';
-
 const toHex      = (n) => (typeof n === 'string' && n.startsWith('0x')) ? n : ('0x' + BigInt(n).toString(16));
 const uint256Hex = (n) => ('0x' + BigInt(n).toString(16).padStart(64, '0'));
 
@@ -65,14 +47,14 @@ function buildMintData(fidStr) {
     const fid = BigInt(fidStr || '0');
     return (MINT_SELECTOR + uint256Hex(fid).slice(2)).toLowerCase();
   } catch {
-    return MINT_SELECTOR; // fail-soft
+    return MINT_SELECTOR;
   }
 }
 
 /* Neynar Frames v2 doğrulama (opsiyonel) */
 async function validateWithNeynar(payload) {
   try {
-    if (!NEYNAR_API_KEY) return { ok: true }; // dev mod
+    if (!NEYNAR_API_KEY) return { ok: true };
     const r = await fetch('https://api.neynar.com/v2/frames/validate', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'api_key': NEYNAR_API_KEY },
@@ -103,7 +85,7 @@ if (fs.existsSync(STATIC_DIR)) {
   }));
 }
 
-/* -------------------- /.well-known/farcaster.json (dinamik) -------------------- */
+/* -------------------- /.well-known/farcaster.json -------------------- */
 app.get('/.well-known/farcaster.json', (_req, res) => {
   res.set({
     'Content-Type': 'application/json; charset=utf-8',
@@ -134,7 +116,7 @@ app.get('/.well-known/farcaster.json', (_req, res) => {
   res.send(JSON.stringify({ accountAssociation, miniapp }, null, 2));
 });
 
-// (varsa) statik .well-known altını da servis et
+// serve static .well-known if present
 const WELL_KNOWN_DIR = path.join(STATIC_DIR, '.well-known');
 if (fs.existsSync(WELL_KNOWN_DIR)) {
   app.use('/.well-known', express.static(WELL_KNOWN_DIR, {
@@ -148,11 +130,10 @@ if (fs.existsSync(WELL_KNOWN_DIR)) {
 /* -------------------- OpenSea Metadata -------------------- */
 app.get('/metadata/:fid.json', async (req, res) => {
   const fid = String(req.params.fid || '0');
-
   const fallbackImage =
     fs.existsSync(path.join(STATIC_DIR, 'default.png'))
-      ? PUBLIC_BASE_URL + '/static/default.png'
-      : PUBLIC_BASE_URL + '/static/og.png';
+      ? (PUBLIC_BASE_URL + '/static/default.png')
+      : (PUBLIC_BASE_URL + '/static/og.png');
 
   try {
     const url = 'https://client.warpcast.com/v2/user-by-fid?fid=' + encodeURIComponent(fid);
@@ -235,7 +216,7 @@ function renderLaunchEmbed() {
     + '</head><body style="margin:0;background:#000;"></body></html>';
 }
 
-app.get('/mini/launch', function(_req, res){
+app.get('/mini/launch', ( _req, res ) => {
   res.status(200).set({
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-store, max-age=0',
@@ -280,15 +261,8 @@ function renderMiniAppPage(opts) {
     + '<div id="status" class="muted">Loading…</div>'
     + '<div id="result" class="muted" style="margin-top:8px"></div>'
     + '</div></div>'
-
-    // *** ERKEN READY: Splash'ı hemen kapatır ***
     + '<script type="module">'
-    + "  import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';"
-    + "  (async()=>{try{await sdk.actions.ready();}catch(e){console.warn('early ready failed',e);}})();"
-    + '</script>'
-
-    // Mini App ana mantık (wagmi + connector)
-    + '<script type="module">'
+      // libs
       + "import { createConfig, connect, getAccount, sendTransaction } from 'https://esm.sh/@wagmi/core@2.13.4';"
       + "import { http } from 'https://esm.sh/viem@2.13.7';"
       + "import { base } from 'https://esm.sh/viem@2.13.7/chains';"
@@ -304,55 +278,66 @@ function renderMiniAppPage(opts) {
       + "function setStatus(t){statusEl.textContent=t;}"
       + "function setBusy(b){mintBtn.disabled=refreshBtn.disabled=b;}"
 
+      // call ready ASAP — top-level IIFE
+      + "(async function(){"
+      + "  try{ await sdk.actions.ready(); okDot.style.background='#0bd30b'; setStatus('Ready.'); }"
+      + "  catch(e){ console.warn('sdk.ready error:', e); setStatus('Ready.'); }"
+      + "})();"
+
+      // wagmi
       + "const fcConnector=new FarcasterMiniAppConnector({ chains:[base] });"
       + "const config=createConfig({ chains:[base], transports:{[base.id]:http()}, connectors:[fcConnector] });"
 
-      + "async function init(){"
-        + "try{await sdk.actions.ready(); okDot.style.background='#0bd30b'; setStatus('Ready.');}"
-        + "catch(e){console.warn('sdk.ready error:',e); setStatus('Ready.');}"
-        + "refreshBtn.onclick=function(){location.reload();};"
-        + "mintBtn.onclick=async function(){"
-          + "setBusy(true); resultEl.textContent='';"
-          + "try{"
-            + "const r=await fetch('" + txUrl + "',{headers:{'accept':'application/json','cache-control':'no-cache'}});"
-            + "if(!r.ok) throw new Error('Tx payload failed: '+r.status);"
-            + "const tx=await r.json();"
-            + "let acc=getAccount(config);"
-            + "if(!acc.isConnected){ await connect(config,{ connector: fcConnector }); acc=getAccount(config); }"
-            + "if(!acc.isConnected) throw new Error('Wallet provider missing');"
-            + "const chainIdNum=Number(String(tx.chainId).split(':').pop()||" + CHAIN_ID_NUM + ");"
-            + "setStatus('Opening wallet…');"
-            + "const hash=await sendTransaction(config,{ chainId: chainIdNum, to: tx.params.to, data: tx.params.data, value: BigInt(tx.params.value) });"
-            + "setStatus('Mint submitted. Waiting for confirmation…');"
-            + "var link='https://basescan.org/tx/'+hash;"
-            + "resultEl.innerHTML='Tx: <a class=\"link\" href=\"'+link+'\" target=\"_blank\" rel=\"noopener\">view on BaseScan</a>';"
-          + "}"
-          + "catch(err){"
-            + "console.error(err);"
-            + "if(String(err&&err.message||err).toLowerCase().includes('wallet provider')){"
-              + "setStatus('No wallet in this preview. Opening Frame mint…');"
-              + "try{ await sdk.actions.openUrl('" + frameMintUrl + "'); }catch(_e){ location.href='" + frameMintUrl + "'; }"
-            + "}else{"
-              + "setStatus('Mint failed: '+(err&&err.message?err.message:String(err)));"
-            + "}"
-          + "}"
-          + "finally{ setBusy(false); }"
-        + "};"
-      + "}"
-      + "init();"
+      + "refreshBtn.onclick=function(){ location.reload(); };"
+
+      + "mintBtn.onclick=async function(){"
+      + "  setBusy(true); resultEl.textContent='';"
+      + "  try{"
+      + "    const r=await fetch('" + txUrl + "',{headers:{'accept':'application/json','cache-control':'no-cache'}});"
+      + "    if(!r.ok) throw new Error('Tx payload failed: '+r.status);"
+      + "    const tx=await r.json();"
+
+      + "    let acc=getAccount(config);"
+      + "    if(!acc.isConnected){ await connect(config,{ connector: fcConnector }); acc=getAccount(config); }"
+      + "    if(!acc.isConnected) throw new Error('Wallet provider missing');"
+
+      + "    const chainIdNum=Number(String(tx.chainId).split(':').pop()||" + CHAIN_ID_NUM + ");"
+      + "    setStatus('Opening wallet…');"
+
+      // timeout guard
+      + "    const txPromise = sendTransaction(config,{ chainId:chainIdNum, to:tx.params.to, data:tx.params.data, value: BigInt(tx.params.value) });"
+      + "    const timeout = new Promise((_r, rej)=> setTimeout(()=>rej(new Error('wallet timeout')), 3000));"
+      + "    const hash = await Promise.race([txPromise, timeout]);"
+
+      + "    setStatus('Mint submitted. Waiting for confirmation…');"
+      + "    var link='https://basescan.org/tx/'+hash;"
+      + "    resultEl.innerHTML='Tx: <a class=\"link\" href=\"'+link+'\" target=\"_blank\" rel=\"noopener\">view on BaseScan</a>';"
+      + "  }"
+      + "  catch(err){"
+      + "    console.error(err);"
+      + "    const msg=String(err && err.message || err).toLowerCase();"
+      + "    if(msg.includes('wallet provider') || msg.includes('timeout')){"
+      + "      setStatus('No wallet here. Opening Frame mint…');"
+      + "      try{ await sdk.actions.openUrl('" + frameMintUrl + "'); }catch(_e){ location.href='" + frameMintUrl + "'; }"
+      + "    }else{"
+      + "      setStatus('Mint failed: '+(err && err.message ? err.message : String(err)));"
+      + "    }"
+      + "  }"
+      + "  finally{ setBusy(false); }"
+      + "};"
     + '</script>'
     + '</body></html>';
 }
 
-app.get('/mini/app', function(req, res){
+app.get('/mini/app', (req, res) => {
   const fid = String(req.query.fid || '0');
   res.status(200).set({
     'Content-Type':'text/html; charset=utf-8',
     'Cache-Control':'no-store'
-  }).send(renderMiniAppPage({ fid: fid }));
+  }).send(renderMiniAppPage({ fid }));
 });
 
-/* -------------------- Frame (Mint) — feed içi kart: JS yok, sadece meta -------------------- */
+/* -------------------- Frame (Mint) -------------------- */
 function renderMintFrame(opts) {
   const fid = String((opts && opts.fid) || '0');
   const image   = PUBLIC_BASE_URL + '/static/og.png';
@@ -394,13 +379,15 @@ async function handleMintFrame(req, res) {
 app.get('/frame/mint', handleMintFrame);
 app.post('/frame/mint', handleMintFrame);
 
+// some clients probe this:
+app.get('/mini/frame', handleMintFrame);
+
 /* -------------------- TX (Frames v2) -------------------- */
 async function handleTx(req, res) {
   if (req.method === 'POST') {
     const v = await validateWithNeynar(req.body || {});
     if (!v.ok) return res.status(401).json({ error: 'neynar_validation_failed' });
   }
-
   if (!CONTRACT_ADDR) return res.status(500).json({ error: 'CONTRACT_ADDRESS missing' });
 
   const fid = String(
@@ -410,19 +397,16 @@ async function handleTx(req, res) {
   );
 
   const tx = {
-    chainId: CHAIN_ID,             // "eip155:8453"
+    chainId: CHAIN_ID,
     method: 'eth_sendTransaction',
     params: {
-      to: CONTRACT_ADDR,           // env
-      data: buildMintData(fid),    // 0xa0712d68 + fid
-      value: toHex(MINT_PRICE_WEI) // env
+      to: CONTRACT_ADDR,
+      data: buildMintData(fid),
+      value: toHex(MINT_PRICE_WEI)
     },
   };
 
-  res
-    .status(200)
-    .set({ 'Cache-Control': 'no-store, max-age=0' })
-    .json(tx);
+  res.status(200).set({ 'Cache-Control': 'no-store, max-age=0' }).json(tx);
 }
 app.get('/mini/tx', handleTx);
 app.post('/mini/tx', handleTx);
@@ -448,7 +432,7 @@ app.post('/neynar/webhook', (req, res) => {
     return res.status(200).json({ ok: true });
   } catch (e) {
     console.error('[NEYNAR WEBHOOK] error', e);
-    return res.status(200).json({ ok: true }); // fail-soft
+    return res.status(200).json({ ok: true });
   }
 });
 

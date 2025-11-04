@@ -13,23 +13,6 @@ const app = express();
 app.set('trust proxy', true);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-// Warpcast / Farcaster içinden embed'e izin ver + popup'lara izin ver
-app.use((req, res, next) => {
-  // Bazı proxy’ler XFO ekleyebiliyor; temizle
-  res.removeHeader('X-Frame-Options');
-
-  // Warpcast ve Farcaster domainlerinden çerçevelemeye izin ver
-  res.setHeader(
-    'Content-Security-Policy',
-    "frame-ancestors 'self' https://*.warpcast.com https://*.farcaster.xyz"
-  );
-
-  // Cüzdan açılır pencereleri için gerekli
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
-
-  next();
-});
-
 
 /* -------------------- Embed/CSP fix -------------------- */
 // Warpcast/Farcaster içinde açılabilsin
@@ -242,21 +225,13 @@ app.get('/mini/frame', (_req, res) => {
   }).send(renderLaunchEmbed());
 });
 
-// -------------------- Mini App (webview) — /mini/app --------------------
+/* -------------------- Mini App (webview) — /mini/app -------------------- */
 function renderMiniAppPage(opts) {
   const fid = String((opts && opts.fid) || '0');
   const image = PUBLIC_BASE_URL + '/static/og.png';
   const txUrl = PUBLIC_BASE_URL + '/mini/tx?fid=' + encodeURIComponent(fid);
   const frameMintUrl = PUBLIC_BASE_URL + '/frame/mint?fid=' + encodeURIComponent(fid);
 
-  <script type="module">
-  import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';
-  (async () => {
-    try { await sdk.actions.ready(); }
-    catch (e) { console.warn('early ready failed', e); }
-  })();
-</script>
-  
   return '<!doctype html>'
     + '<html lang="en"><head>'
     + '<meta charset="utf-8"/>'
@@ -277,13 +252,6 @@ function renderMiniAppPage(opts) {
     + 'a.link{color:#8ab4ff;text-decoration:none}'
     + '</style>'
     + '</head><body>'
-
-    // 🔴 ERKEN READY (garanti)
-    + '<script type="module">'
-      + "import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';"
-      + "(async()=>{ try{ await sdk.actions.ready(); } catch(e){ console.warn('early ready failed', e); } })();"
-    + '</script>'
-
     + '<div class="wrap"><div class="card">'
     + '<img class="logo" src="' + image + '" alt="WarpCat"/>'
     + '<h2 style="margin:16px 0 4px">WarpCat — Mint <span id="ok"></span></h2>'
@@ -295,8 +263,6 @@ function renderMiniAppPage(opts) {
     + '<div id="status" class="muted">Loading…</div>'
     + '<div id="result" class="muted" style="margin-top:8px"></div>'
     + '</div></div>'
-
-    // asıl app script’i (Wagmi + provider + fallback) — HİÇ DEĞİŞTİRMEDİM
     + '<script type="module">'
       + "import { createConfig, connect, getAccount, sendTransaction } from 'https://esm.sh/@wagmi/core@2.13.4';"
       + "import { http } from 'https://esm.sh/viem@2.13.7';"
@@ -317,9 +283,9 @@ function renderMiniAppPage(opts) {
       + "const config=createConfig({ chains:[base], transports:{[base.id]:http()}, connectors:[fcConnector] });"
 
       + "async function init(){"
-        // ikinci kez ready — sorun değil; early script kaçarsa bunu yakalar
+        // Ready — burada EN BAŞTA
         + "try{ await sdk.actions.ready(); okDot.style.background='#0bd30b'; setStatus('Ready.'); }"
-        + "catch(e){ console.warn('sdk.ready (main) error:', e); setStatus('Ready.'); }"
+        + "catch(e){ console.warn('sdk.ready error:', e); setStatus('Ready.'); }"
 
         + "refreshBtn.onclick=function(){location.reload();};"
 
@@ -329,15 +295,12 @@ function renderMiniAppPage(opts) {
             + "const r=await fetch('" + txUrl + "',{headers:{'accept':'application/json','cache-control':'no-cache'}});"
             + "if(!r.ok) throw new Error('Tx payload failed: '+r.status);"
             + "const tx=await r.json();"
-
             + "let acc=getAccount(config);"
             + "if(!acc.isConnected){ await connect(config,{ connector: fcConnector }); acc=getAccount(config); }"
             + "if(!acc.isConnected) throw new Error('Wallet provider missing');"
-
             + "const chainIdNum=Number(String(tx.chainId).split(':').pop()||" + CHAIN_ID_NUM + ");"
             + "setStatus('Opening wallet…');"
             + "const hash=await sendTransaction(config,{ chainId: chainIdNum, to: tx.params.to, data: tx.params.data, value: BigInt(tx.params.value) });"
-
             + "setStatus('Mint submitted. Waiting for confirmation…');"
             + "var link='https://basescan.org/tx/'+hash;"
             + "resultEl.innerHTML='Tx: <a class=\"link\" href=\"'+link+'\" target=\"_blank\" rel=\"noopener\">view on BaseScan</a>';"
@@ -348,7 +311,7 @@ function renderMiniAppPage(opts) {
               + "setStatus('No wallet in this preview. Opening Frame mint…');"
               + "try{ await sdk.actions.openUrl('" + frameMintUrl + "'); }catch(_e){ location.href='" + frameMintUrl + "'; }"
             + "}else{"
-              + "setStatus('Mint failed: '+((err&&err.message)?err.message:String(err)));"
+              + "setStatus('Mint failed: '+(err&&err.message?err.message:String(err)));"
             + "}"
           + "}"
           + "finally{ setBusy(false); }"
@@ -358,7 +321,6 @@ function renderMiniAppPage(opts) {
     + '</script>'
     + '</body></html>';
 }
-
 app.get('/mini/app', (req, res) => {
   const fid = String(req.query.fid || '0');
   res.status(200).set({
@@ -466,5 +428,3 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
-
-

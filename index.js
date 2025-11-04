@@ -97,7 +97,7 @@ app.get('/.well-known/farcaster.json', (_req, res) => {
     'Expires': '0',
   });
   const accountAssociation = {
-    header:   "eyJmaWQiOjQ3MzM2NiwidHlwZSI6ImF1dGciLCJrZXkiOiIweDIwNDQyMDNCZGFiZTE0ZTQwNUEyQTY4MTE2MjFkZTI0Njg4RTZlNjkifQ",
+    header:   "eyJmaWQiOjQ3MzM2NiwidHlwZSI6ImF1dGgiLCJrZXkiOiIweDIwNDQyMDNCZGFiZTE0ZTQwNUEyQTY4MTE2MjFkZTI0Njg4RTZlNjkifQ",
     payload:  "eyJkb21haW4iOiJ3YXJwY2F0Lnh5eiJ9",
     signature:"OexyLeUjG/iWJemqCMOgFObd8i3xwUUpaogl8eKtAoBS/mMy/2n1ZTYFICWojInbzCSkaSLLUD1/zB3e5Qiwwhw="
   };
@@ -250,16 +250,9 @@ function renderMiniAppPage(opts) {
     + '<div id="status" class="muted">Loading…</div>'
     + '<div id="result" class="muted" style="margin-top:8px"></div>'
     + '</div></div>'
-    + '<script type="module">'
-    + 'import { sdk } from "https://esm.sh/@farcaster/miniapp-sdk@0.2.1";'
-    + 'document.addEventListener("DOMContentLoaded", async () => {'
-    + '  try {'
-    + '    await sdk.actions.ready();'
-    + '    document.getElementById("ok").style.background = "#0bd30b";'
-    + '    document.getElementById("status").textContent = "Hazır!";'
-    + '  } catch(e) { console.warn(e); }'
-    + '});'
-    + '</script>'
+    // *** ERKEN READY: Splash'ı hemen kapatır (GLOBAL SDK yöntemi kullanıldı) ***
+    + '<script type="module">import { sdk } from "https://esm.sh/@farcaster/miniapp-sdk@0.2.1"; (async()=>{try{await sdk.actions.ready();}catch(e){console.warn(e);}})();</script>'
+    // Mini App ana mantık (wagmi + connector)
     + '<script type="module">'
       + "import { createConfig, connect, getAccount, sendTransaction } from 'https://esm.sh/@wagmi/core@2.13.4';"
       + "import { http } from 'https://esm.sh/viem@2.13.7';"
@@ -279,8 +272,7 @@ function renderMiniAppPage(opts) {
         + "try{await sdk.actions.ready(); okDot.style.background='#0bd30b'; setStatus('Ready.');}"
         + "catch(e){console.warn('sdk.ready error:',e); setStatus('Ready.');}"
         + "refreshBtn.onclick=function(){location.reload();};"
-        // === BURASI DEĞİŞTİ: onclick → addEventListener ===
-        + "mintBtn.addEventListener('click', async function(){"
+        + "mintBtn.onclick=async function(){"
           + "setBusy(true); resultEl.textContent='';"
           + "try{"
             + "const r=await fetch('" + txUrl + "',{headers:{'accept':'application/json','cache-control':'no-cache'}});"
@@ -306,7 +298,7 @@ function renderMiniAppPage(opts) {
             + "}"
           + "}"
           + "finally{ setBusy(false); }"
-        + "});"
+        + "};"
       + "}"
       + "init();"
     + '</script>'

@@ -13,6 +13,17 @@ const app = express();
 app.set('trust proxy', true);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+// ---------- CORS: Vercel frontend'e izin ver ----------
+app.use((req, res, next) => {
+  const origin = req.headers.origin || '';
+  const allow = ['https://warpcat.xyz', 'https://www.warpcat.xyz'];
+  if (allow.includes(origin)) res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'content-type,api_key,x-neynar-signature');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 
 /* -------------------- Logging -------------------- */
 app.use((req, _res, next) => {
@@ -454,4 +465,5 @@ app.get('/healthz', (_req, res) => res.json({ ok: true }));
 app.listen(PORT, () => {
   console.log(`WarpCat listening on ${PUBLIC_BASE_URL}`);
 });
+
 

@@ -239,6 +239,13 @@ function renderMiniAppPage(opts) {
     + '<meta name="viewport" content="width=device-width, initial-scale=1"/>'
     + '<title>WarpCat — Mint</title>'
     + '<meta property="og:image" content="' + image + '"/>'
+
+    // ==== EARLY READY (kritik) ====
+    + '<script type="module" id="wc-ready">'
+      + "import { sdk } from 'https://esm.sh/@farcaster/miniapp-sdk@0.2.1';"
+      + "(async()=>{try{await sdk.actions.ready();}catch(e){console.warn(\"ready() early failed\",e);}})();"
+    + '</script>'
+
     + '<style>'
     + ':root{color-scheme:dark;}'
     + 'html,body{margin:0;background:#000;color:#fff;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Helvetica,Arial}'

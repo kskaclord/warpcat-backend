@@ -1,4 +1,4 @@
-        import 'dotenv/config';
+    import 'dotenv/config';
     import express from 'express';
     import fs from 'fs';
     import path from 'path';
@@ -304,7 +304,7 @@
         + "if(!acc.isConnected) throw new Error('Wallet provider missing');"
         + "const chainIdNum=Number(String(tx.chainId).split(':').pop()||"+str(CHAIN_ID_NUM)+");"
         + "const txHash=await sendTransaction(config,{ chainId:chainIdNum, to:tx.params.to, data:tx.params.data, value: BigInt(tx.params.value) });"
-        + "setStatus('Mint submitted.'); resultEl.innerHTML='Tx: <a class="link" href="https://basescan.org/tx/'+txHash+'" target="_blank" rel="noopener">view on BaseScan</a>';"
+        + "setStatus('Mint submitted.'); resultEl.innerHTML=\'Tx: <a class=\"link\" href=\"https://basescan.org/tx/\'+txHash+\'\" target=\"_blank\" rel=\"noopener\">view on BaseScan</a>\';"
         + "}catch(err){ const msg=String(err&&err.message||err).toLowerCase();"
         + "if(msg.includes('wallet provider')){ setStatus('No wallet. Opening Frame mint…'); try{ await sdk.actions.openUrl('"+frameMintUrl+"'); }catch(_e){ location.href='"+frameMintUrl+"'; } }"
         + "else{ setStatus('Mint failed: '+(err&&err.message?err.message:String(err))); } } finally{ setBusy(false);} };"
